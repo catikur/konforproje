@@ -1,0 +1,205 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  FINANS
+  IZLEYICI
+}
+
+enum CategoryType {
+  EXPENSE
+  INCOME
+  BOTH
+}
+
+enum TaxMode {
+  INCLUDED
+  EXCLUDED
+}
+
+enum BacklogDirection {
+  INCOME
+  EXPENSE
+}
+
+enum BacklogStatus {
+  PLANNED
+  PARTIAL
+  DONE
+  CANCELLED
+}
+
+enum OcrStatus {
+  NONE
+  PROCESSING
+  DONE
+  FAILED
+}
+
+model User {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  passwordHash String
+  displayName  String
+  role         Role      @default(FINANS)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  expenses Expense[] @relation("ExpenseCreatedBy")
+  incomes  Income[]  @relation("IncomeCreatedBy")
+  backlog  BacklogItem[] @relation("BacklogCreatedBy")
+  audits   AuditLog[]
+}
+
+model Category {
+  id        String       @id @default(cuid())
+  name      String
+  type      CategoryType @default(BOTH)
+  color     String       @default("#2563EB")
+  sortOrder Int          @default(0)
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  deletedAt DateTime?
+
+  expenses ExpenseCategory[]
+  incomes  IncomeCategory[]
+  backlog  BacklogCategory[]
+}
+
+model Supplier {
+  id        String    @id @default(cuid())
+  name      String
+  taxId     String?
+  notes     String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  expenses Expense[]
+}
+
+model Expense {
+  id          String    @id @default(cuid())
+  description String
+  expenseDate DateTime  @db.Date
+  amount      Decimal   @db.Decimal(14, 2)
+  taxMode     TaxMode   @default(INCLUDED)
+  vatRate     Int       @default(20)
+  netAmount   Decimal   @db.Decimal(14, 2)
+  vatAmount   Decimal   @db.Decimal(14, 2)
+  grossAmount Decimal   @db.Decimal(14, 2)
+  currency    String    @default("TRY")
+  ocrStatus   OcrStatus @default(NONE)
+  ocrRawJson  Json?
+  supplierId  String?
+  supplier    Supplier? @relation(fields: [supplierId], references: [id])
+  createdById String
+  createdBy   User      @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  categories  ExpenseCategory[]
+  attachments Attachment[]
+}
+
+model ExpenseCategory {
+  expenseId  String
+  categoryId String
+  expense    Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  @@id([expenseId, categoryId])
+}
+
+model Income {
+  id          String   @id @default(cuid())
+  description String
+  incomeDate  DateTime @db.Date
+  amount      Decimal  @db.Decimal(14, 2)
+  taxMode     TaxMode  @default(INCLUDED)
+  vatRate     Int      @default(20)
+  netAmount   Decimal  @db.Decimal(14, 2)
+  vatAmount   Decimal  @db.Decimal(14, 2)
+  grossAmount Decimal  @db.Decimal(14, 2)
+  currency    String   @default("TRY")
+  createdById String
+  createdBy   User     @relation("IncomeCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  categories IncomeCategory[]
+}
+
+model IncomeCategory {
+  incomeId   String
+  categoryId String
+  income     Income   @relation(fields: [incomeId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  @@id([incomeId, categoryId])
+}
+
+model BacklogItem {
+  id             String           @id @default(cuid())
+  direction      BacklogDirection
+  periodYear     Int
+  periodMonth    Int
+  expectedAmount Decimal          @db.Decimal(14, 2)
+  description    String
+  status         BacklogStatus    @default(PLANNED)
+  createdById    String
+  createdBy      User             @relation("BacklogCreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  deletedAt      DateTime?
+
+  categories BacklogCategory[]
+
+  @@index([periodYear, periodMonth])
+}
+
+model BacklogCategory {
+  backlogId  String
+  categoryId String
+  backlog    BacklogItem @relation(fields: [backlogId], references: [id], onDelete: Cascade)
+  category   Category    @relation(fields: [categoryId], references: [id])
+
+  @@id([backlogId, categoryId])
+}
+
+model Attachment {
+  id           String   @id @default(cuid())
+  expenseId    String
+  expense      Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  filename     String
+  originalName String
+  mimeType     String
+  size         Int
+  createdAt    DateTime @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id])
+  action     String
+  entityType String
+  entityId   String?
+  meta       Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+}
