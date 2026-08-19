@@ -1,31 +1,9 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
-import {
-  IsBoolean,
-  IsOptional,
-  IsString,
-  MinLength,
-} from "class-validator";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { Role } from "@prisma/client";
+import { SupplierSchema, SupplierUpdateSchema } from "@konfor/shared";
 import { SuppliersService } from "./suppliers.service";
 import { Roles } from "../common/guards";
-
-class SupplierDto {
-  @IsString()
-  @MinLength(1)
-  name!: string;
-
-  @IsOptional()
-  @IsString()
-  taxId?: string | null;
-
-  @IsOptional()
-  @IsString()
-  notes?: string | null;
-
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
-}
+import { zodPipe } from "../common/zod-pipe";
 
 @Controller("suppliers")
 export class SuppliersController {
@@ -38,13 +16,22 @@ export class SuppliersController {
 
   @Post()
   @Roles(Role.ADMIN, Role.FINANS)
-  create(@Body() body: SupplierDto) {
-    return this.suppliers.create(body);
+  create(@Body(zodPipe(SupplierSchema)) body: Record<string, unknown>) {
+    return this.suppliers.create(body as never);
   }
 
   @Patch(":id")
   @Roles(Role.ADMIN, Role.FINANS)
-  update(@Param("id") id: string, @Body() body: SupplierDto) {
-    return this.suppliers.update(id, body);
+  update(
+    @Param("id") id: string,
+    @Body(zodPipe(SupplierUpdateSchema)) body: Record<string, unknown>,
+  ) {
+    return this.suppliers.update(id, body as never);
+  }
+
+  @Delete(":id")
+  @Roles(Role.ADMIN)
+  remove(@Param("id") id: string) {
+    return this.suppliers.remove(id);
   }
 }

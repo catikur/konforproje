@@ -54,10 +54,23 @@ model User {
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
-  expenses Expense[] @relation("ExpenseCreatedBy")
-  incomes  Income[]  @relation("IncomeCreatedBy")
-  backlog  BacklogItem[] @relation("BacklogCreatedBy")
-  audits   AuditLog[]
+  expenses      Expense[]      @relation("ExpenseCreatedBy")
+  incomes       Income[]       @relation("IncomeCreatedBy")
+  backlog       BacklogItem[]  @relation("BacklogCreatedBy")
+  audits        AuditLog[]
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model Category {
@@ -112,6 +125,7 @@ model Expense {
 
   categories  ExpenseCategory[]
   attachments Attachment[]
+  backlogLinks BacklogLink[]
 }
 
 model ExpenseCategory {
@@ -140,7 +154,8 @@ model Income {
   updatedAt   DateTime @updatedAt
   deletedAt   DateTime?
 
-  categories IncomeCategory[]
+  categories   IncomeCategory[]
+  backlogLinks BacklogLink[]
 }
 
 model IncomeCategory {
@@ -167,6 +182,7 @@ model BacklogItem {
   deletedAt      DateTime?
 
   categories BacklogCategory[]
+  links      BacklogLink[]
 
   @@index([periodYear, periodMonth])
 }
@@ -178,6 +194,19 @@ model BacklogCategory {
   category   Category    @relation(fields: [categoryId], references: [id])
 
   @@id([backlogId, categoryId])
+}
+
+model BacklogLink {
+  id        String       @id @default(cuid())
+  backlogId String
+  backlog   BacklogItem  @relation(fields: [backlogId], references: [id], onDelete: Cascade)
+  expenseId String?
+  expense   Expense?     @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  incomeId  String?
+  income    Income?      @relation(fields: [incomeId], references: [id], onDelete: Cascade)
+  createdAt DateTime     @default(now())
+
+  @@index([backlogId])
 }
 
 model Attachment {

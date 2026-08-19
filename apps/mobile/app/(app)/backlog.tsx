@@ -1,23 +1,39 @@
 import { useCallback, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { useAuth } from "../../lib/auth";
-import { api, formatTry } from "../../lib/api";
+import { api, canWrite, formatTry } from "../../lib/api";
+import { Button, Card, Chip, Field, PeriodRow, ui } from "../../components/ui";
+
+const STATUSES = ["PLANNED", "PARTIAL", "DONE", "CANCELLED"] as const;
 
 export default function BacklogScreen() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const writable = canWrite(user?.role);
   const now = new Date();
-  const [year] = useState(now.getFullYear());
-  const [month] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
   const [items, setItems] = useState<any[]>([]);
+  const [actuals, setActuals] = useState<any[]>([]);
   const [direction, setDirection] = useState<"INCOME" | "EXPENSE">("INCOME");
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
+  const [status, setStatus] = useState<(typeof STATUSES)[number]>("PLANNED");
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
-    setItems(await api.backlog(token, year, month));
+    const [list, incomes, expenses] = await Promise.all([
+      api.backlog(token, { year, month, pageSize: 100 }),
+      api.incomes(token, { year, month, pageSize: 100 }),
+      api.expenses(token, { year, month, pageSize: 100 }),
+    ]);
+    setItems(list.items);
+    setActuals([
+      ...incomes.items.map((i: any) => ({ ...i, kind: "INCOME" })),
+      ...expenses.items.map((e: any) => ({ ...e, kind: "EXPENSE" })),
+    ]);
   }, [token, year, month]);
 
   useFocusEffect(
@@ -26,138 +42,157 @@ export default function BacklogScreen() {
     }, [load]),
   );
 
-  async function create() {
+  async function save() {
     if (!token) return;
+    const body = {
+      direction,
+      periodYear: year,
+      periodMonth: month,
+      expectedAmount: Number(amount.replace(",", ".")),
+      description,
+      categoryIds: [],
+      status,
+    };
     try {
-      await api.createBacklog(token, {
-        direction,
-        periodYear: year,
-        periodMonth: month,
-        expectedAmount: Number(amount.replace(",", ".")),
-        description,
-        categoryIds: [],
-        status: "PLANNED",
-      });
+      if (editingId) await api.updateBacklog(token, editingId, body);
+      else await api.createBacklog(token, body);
       setDescription("");
       setAmount("");
-      setMessage("Backlog eklendi");
+      setEditingId(null);
+      setMessage(editingId ? "Güncellendi" : "Backlog eklendi");
       await load();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Kayıt başarısız");
     }
   }
 
+  async function copyPrev() {
+    if (!token) return;
+    const from = new Date(year, month - 2, 1);
+    try {
+      const res = await api.copyBacklog(token, {
+        fromYear: from.getFullYear(),
+        fromMonth: from.getMonth() + 1,
+        toYear: year,
+        toMonth: month,
+      });
+      setMessage(`${(res as { copied: number }).copied} kalem kopyalandı`);
+      await load();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Kopyalama başarısız");
+    }
+  }
+
   return (
-    <View style={styles.wrap}>
-      <Text style={styles.title}>Backlog / Planlama</Text>
-      <Text style={styles.hint}>
+    <View style={ui.wrap}>
+      <Text style={ui.title}>Backlog / Planlama</Text>
+      <Text style={ui.hint}>
         {month}/{year} dönemi beklenen gelir ve giderler
       </Text>
-      <View style={styles.form}>
-        <View style={styles.row}>
-          <Pressable
-            style={[styles.chip, direction === "INCOME" && styles.chipActive]}
-            onPress={() => setDirection("INCOME")}
-          >
-            <Text
-              style={[
-                styles.chipText,
-                direction === "INCOME" && styles.chipTextActive,
-              ]}
-            >
-              Gelir planı
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[styles.chip, direction === "EXPENSE" && styles.chipActive]}
-            onPress={() => setDirection("EXPENSE")}
-          >
-            <Text
-              style={[
-                styles.chipText,
-                direction === "EXPENSE" && styles.chipTextActive,
-              ]}
-            >
-              Gider planı
-            </Text>
-          </Pressable>
-        </View>
-        <TextInput
-          style={styles.input}
-          placeholder="Açıklama"
-          value={description}
-          onChangeText={setDescription}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Beklenen tutar"
-          keyboardType="decimal-pad"
-          value={amount}
-          onChangeText={setAmount}
-        />
-        <Pressable style={styles.btn} onPress={create}>
-          <Text style={styles.btnText}>Plan ekle</Text>
-        </Pressable>
-        {message ? <Text style={styles.msg}>{message}</Text> : null}
-      </View>
+      <PeriodRow month={month} year={year} setMonth={setMonth} setYear={setYear} onLoad={load} />
+
+      {writable ? (
+        <Card>
+          <View style={ui.row}>
+            <Chip label="Gelir planı" active={direction === "INCOME"} onPress={() => setDirection("INCOME")} />
+            <Chip label="Gider planı" active={direction === "EXPENSE"} onPress={() => setDirection("EXPENSE")} />
+            <Button label="Önceki ayı kopyala" tone="ghost" onPress={copyPrev} />
+          </View>
+          <Field placeholder="Açıklama" value={description} onChangeText={setDescription} />
+          <Field placeholder="Beklenen tutar" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} />
+          <View style={ui.row}>
+            {STATUSES.map((s) => (
+              <Chip key={s} label={s} active={status === s} onPress={() => setStatus(s)} />
+            ))}
+          </View>
+          <View style={ui.row}>
+            <Button label={editingId ? "Güncelle" : "Plan ekle"} onPress={save} />
+            {editingId ? (
+              <Button
+                label="Vazgeç"
+                tone="ghost"
+                onPress={() => {
+                  setEditingId(null);
+                  setDescription("");
+                  setAmount("");
+                }}
+              />
+            ) : null}
+          </View>
+          {message ? <Text style={ui.msg}>{message}</Text> : null}
+        </Card>
+      ) : null}
+
       {items.map((item) => (
-        <View key={item.id} style={styles.card}>
-          <Text style={styles.cardTitle}>
-            {item.direction === "INCOME" ? "Gelir" : "Gider"} ·{" "}
-            {item.description}
+        <Card key={item.id}>
+          <Text style={ui.cardTitle}>
+            {item.direction === "INCOME" ? "Gelir" : "Gider"} · {item.description}
           </Text>
-          <Text>{formatTry(Number(item.expectedAmount))}</Text>
-          <Text style={styles.meta}>{item.status}</Text>
-        </View>
+          <Text>
+            Beklenen {formatTry(Number(item.expectedAmount))} · Bağlı{" "}
+            {formatTry(Number(item.linkedAmount || 0))}
+          </Text>
+          <Text style={ui.meta}>
+            {item.status} · kalan {formatTry(Number(item.remainingAmount || 0))}
+          </Text>
+          {writable ? (
+            <View style={ui.row}>
+              <Button
+                label="Düzenle"
+                tone="ghost"
+                onPress={() => {
+                  setEditingId(item.id);
+                  setDescription(item.description);
+                  setAmount(String(item.expectedAmount));
+                  setDirection(item.direction);
+                  setStatus(item.status);
+                }}
+              />
+              <Button
+                label="Sil"
+                tone="danger"
+                onPress={async () => {
+                  if (!token) return;
+                  await api.deleteBacklog(token, item.id);
+                  await load();
+                }}
+              />
+            </View>
+          ) : null}
+          {writable ? (
+            <View>
+              <Text style={ui.meta}>Fiiliye bağla</Text>
+              <View style={ui.row}>
+                {actuals
+                  .filter((a) => a.kind === item.direction)
+                  .slice(0, 8)
+                  .map((a) => (
+                    <Chip
+                      key={a.id}
+                      label={`${a.description} ${formatTry(Number(a.grossAmount))}`}
+                      onPress={async () => {
+                        if (!token) return;
+                        try {
+                          await api.linkBacklog(
+                            token,
+                            item.id,
+                            item.direction === "INCOME"
+                              ? { incomeId: a.id }
+                              : { expenseId: a.id },
+                          );
+                          await load();
+                        } catch (e) {
+                          setMessage(e instanceof Error ? e.message : "Bağlama başarısız");
+                        }
+                      }}
+                    />
+                  ))}
+              </View>
+            </View>
+          ) : null}
+        </Card>
       ))}
+      {!items.length ? <Text style={ui.hint}>Bu ay backlog yok — kopyala veya ekle.</Text> : null}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  wrap: { gap: 12 },
-  title: { fontSize: 24, fontWeight: "800" },
-  hint: { color: "#64748B" },
-  form: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    borderRadius: 8,
-    padding: 10,
-  },
-  row: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: {
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  chipActive: { backgroundColor: "#0F766E", borderColor: "#0F766E" },
-  chipText: { color: "#334155" },
-  chipTextActive: { color: "#fff", fontWeight: "700" },
-  btn: {
-    backgroundColor: "#0F766E",
-    borderRadius: 8,
-    padding: 12,
-    alignItems: "center",
-  },
-  btnText: { color: "#fff", fontWeight: "700" },
-  msg: { color: "#0F766E" },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  cardTitle: { fontWeight: "700" },
-  meta: { color: "#64748B", fontSize: 12 },
-});

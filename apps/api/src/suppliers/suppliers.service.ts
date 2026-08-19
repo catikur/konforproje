@@ -37,6 +37,14 @@ export class SuppliersService {
     return this.prisma.supplier.update({ where: { id }, data });
   }
 
+  async remove(id: string) {
+    await this.ensure(id);
+    return this.prisma.supplier.update({
+      where: { id },
+      data: { deletedAt: new Date(), isActive: false },
+    });
+  }
+
   private async ensure(id: string) {
     const s = await this.prisma.supplier.findFirst({
       where: { id, deletedAt: null },

@@ -1,70 +1,76 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from "@nestjs/common";
+import { Role } from "@prisma/client";
 import {
-  IsArray,
-  IsEnum,
-  IsInt,
-  IsNumber,
-  IsOptional,
-  IsString,
-  Max,
-  Min,
-  MinLength,
-} from "class-validator";
-import { BacklogDirection, BacklogStatus, Role } from "@prisma/client";
+  BacklogCopySchema,
+  BacklogCreateSchema,
+  BacklogLinkSchema,
+  BacklogUpdateSchema,
+  ListQuerySchema,
+} from "@konfor/shared";
 import { BacklogService } from "./backlog.service";
 import { Roles } from "../common/guards";
-
-class CreateBacklogDto {
-  @IsEnum(BacklogDirection)
-  direction!: BacklogDirection;
-
-  @IsInt()
-  @Min(2000)
-  @Max(2100)
-  periodYear!: number;
-
-  @IsInt()
-  @Min(1)
-  @Max(12)
-  periodMonth!: number;
-
-  @IsNumber()
-  @Min(0.01)
-  expectedAmount!: number;
-
-  @IsString()
-  @MinLength(1)
-  description!: string;
-
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  categoryIds?: string[];
-
-  @IsOptional()
-  @IsEnum(BacklogStatus)
-  status?: BacklogStatus;
-}
+import { zodPipe } from "../common/zod-pipe";
 
 @Controller("backlog")
 export class BacklogController {
   constructor(private backlog: BacklogService) {}
 
   @Get()
-  list(@Query("year") year?: string, @Query("month") month?: string) {
-    return this.backlog.list({
-      year: year ? Number(year) : undefined,
-      month: month ? Number(month) : undefined,
-    });
+  list(@Query(zodPipe(ListQuerySchema)) query: Record<string, unknown>) {
+    return this.backlog.list(query as never);
+  }
+
+  @Post("copy-period")
+  @Roles(Role.ADMIN, Role.FINANS)
+  copy(
+    @Body(zodPipe(BacklogCopySchema)) body: Record<string, unknown>,
+    @Req() req: { user: { userId: string } },
+  ) {
+    return this.backlog.copyPeriod(body as never, req.user.userId);
+  }
+
+  @Get(":id")
+  get(@Param("id") id: string) {
+    return this.backlog.get(id);
   }
 
   @Post()
   @Roles(Role.ADMIN, Role.FINANS)
   create(
-    @Body() body: CreateBacklogDto,
+    @Body(zodPipe(BacklogCreateSchema)) body: Record<string, unknown>,
     @Req() req: { user: { userId: string } },
   ) {
-    return this.backlog.create(body, req.user.userId);
+    return this.backlog.create(body as never, req.user.userId);
+  }
+
+  @Patch(":id")
+  @Roles(Role.ADMIN, Role.FINANS)
+  update(
+    @Param("id") id: string,
+    @Body(zodPipe(BacklogUpdateSchema)) body: Record<string, unknown>,
+    @Req() req: { user: { userId: string } },
+  ) {
+    return this.backlog.update(id, body as never, req.user.userId);
+  }
+
+  @Post(":id/link")
+  @Roles(Role.ADMIN, Role.FINANS)
+  link(
+    @Param("id") id: string,
+    @Body(zodPipe(BacklogLinkSchema)) body: Record<string, unknown>,
+    @Req() req: { user: { userId: string } },
+  ) {
+    return this.backlog.link(id, body as never, req.user.userId);
+  }
+
+  @Delete(":id/link/:linkId")
+  @Roles(Role.ADMIN, Role.FINANS)
+  unlink(
+    @Param("id") id: string,
+    @Param("linkId") linkId: string,
+    @Req() req: { user: { userId: string } },
+  ) {
+    return this.backlog.unlink(id, linkId, req.user.userId);
   }
 
   @Delete(":id")

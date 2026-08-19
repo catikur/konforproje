@@ -1,51 +1,9 @@
 import { Body, Controller, Get, Param, Patch, Post, Req } from "@nestjs/common";
-import {
-  IsBoolean,
-  IsEnum,
-  IsOptional,
-  IsString,
-  MinLength,
-} from "class-validator";
 import { Role } from "@prisma/client";
+import { CreateUserSchema, UpdateUserSchema } from "@konfor/shared";
 import { UsersService } from "./users.service";
 import { Roles } from "../common/guards";
-
-class CreateUserDto {
-  @IsString()
-  @MinLength(3)
-  username!: string;
-
-  @IsString()
-  @MinLength(6)
-  password!: string;
-
-  @IsString()
-  @MinLength(1)
-  displayName!: string;
-
-  @IsEnum(Role)
-  role: Role = Role.FINANS;
-}
-
-class UpdateUserDto {
-  @IsOptional()
-  @IsString()
-  @MinLength(1)
-  displayName?: string;
-
-  @IsOptional()
-  @IsEnum(Role)
-  role?: Role;
-
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
-
-  @IsOptional()
-  @IsString()
-  @MinLength(6)
-  password?: string;
-}
+import { zodPipe } from "../common/zod-pipe";
 
 @Controller("users")
 @Roles(Role.ADMIN)
@@ -59,7 +17,13 @@ export class UsersController {
 
   @Post()
   create(
-    @Body() body: CreateUserDto,
+    @Body(zodPipe(CreateUserSchema))
+    body: {
+      username: string;
+      password: string;
+      displayName: string;
+      role: Role;
+    },
     @Req() req: { user: { userId: string } },
   ) {
     return this.users.create({ ...body, actorId: req.user.userId });
@@ -68,7 +32,13 @@ export class UsersController {
   @Patch(":id")
   update(
     @Param("id") id: string,
-    @Body() body: UpdateUserDto,
+    @Body(zodPipe(UpdateUserSchema))
+    body: {
+      displayName?: string;
+      role?: Role;
+      isActive?: boolean;
+      password?: string;
+    },
     @Req() req: { user: { userId: string } },
   ) {
     return this.users.update(id, { ...body, actorId: req.user.userId });

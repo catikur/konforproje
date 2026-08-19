@@ -1,25 +1,32 @@
 import { useCallback, useState } from "react";
-import {
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
+import * as DocumentPicker from "expo-document-picker";
 import { useAuth } from "../../lib/auth";
-import { api, formatTry } from "../../lib/api";
+import {
+  api,
+  canWrite,
+  formatTry,
+  todayIso,
+} from "../../lib/api";
+import { Button, Card, Chip, Field, PeriodRow, ui } from "../../components/ui";
 
 export default function ExpensesScreen() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const writable = canWrite(user?.role);
   const now = new Date();
-  const [year] = useState(now.getFullYear());
-  const [month] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
   const [items, setItems] = useState<any[]>([]);
+  const [total, setTotal] = useState(0);
   const [categories, setCategories] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(todayIso());
   const [taxMode, setTaxMode] = useState<"INCLUDED" | "EXCLUDED">("INCLUDED");
   const [vatRate, setVatRate] = useState("20");
   const [categoryId, setCategoryId] = useState<string | null>(null);
@@ -29,18 +36,17 @@ export default function ExpensesScreen() {
   const load = useCallback(async () => {
     if (!token) return;
     const [ex, cats, sups] = await Promise.all([
-      api.expenses(token, year, month),
+      api.expenses(token, { year, month, q, page, pageSize: 50 }),
       api.categories(token),
       api.suppliers(token),
     ]);
-    setItems(ex);
-    setCategories(cats.filter((c) => c.type === "EXPENSE" || c.type === "BOTH"));
+    setItems(ex.items);
+    setTotal(ex.total);
+    const filtered = cats.filter((c) => c.type === "EXPENSE" || c.type === "BOTH");
+    setCategories(filtered);
     setSuppliers(sups);
-    if (!categoryId && cats.length) {
-      const first = cats.find((c) => c.type === "EXPENSE" || c.type === "BOTH");
-      setCategoryId(first?.id || null);
-    }
-  }, [token, year, month, categoryId]);
+    if (!categoryId && filtered[0]) setCategoryId(filtered[0].id);
+  }, [token, year, month, q, page, categoryId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -48,182 +54,151 @@ export default function ExpensesScreen() {
     }, [load]),
   );
 
-  async function create() {
+  function resetForm() {
+    setEditingId(null);
+    setDescription("");
+    setAmount("");
+    setDate(todayIso());
+    setTaxMode("INCLUDED");
+    setVatRate("20");
+    setSupplierId(null);
+  }
+
+  async function save() {
     if (!token || !categoryId) return;
-    setMessage(null);
+    const body = {
+      description,
+      amount: Number(amount.replace(",", ".")),
+      expenseDate: date,
+      taxMode,
+      vatRate: Number(vatRate),
+      categoryIds: [categoryId],
+      supplierId,
+    };
     try {
-      await api.createExpense(token, {
-        description,
-        amount: Number(amount.replace(",", ".")),
-        expenseDate: new Date().toISOString().slice(0, 10),
-        taxMode,
-        vatRate: Number(vatRate),
-        categoryIds: [categoryId],
-        supplierId,
-      });
-      setDescription("");
-      setAmount("");
-      setMessage("Gider kaydedildi");
+      if (editingId) await api.updateExpense(token, editingId, body);
+      else await api.createExpense(token, body);
+      resetForm();
+      setMessage(editingId ? "Gider güncellendi" : "Gider kaydedildi");
       await load();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Kayıt başarısız");
     }
   }
 
+  async function pickFile(expenseId: string) {
+    if (!token) return;
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["application/pdf", "image/*"],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled) return;
+      const file = result.assets[0];
+      await api.uploadExpenseFile(token, expenseId, {
+        uri: file.uri,
+        name: file.name,
+        mimeType: file.mimeType,
+      });
+      setMessage("Ek yüklendi");
+      await load();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Yükleme başarısız");
+    }
+  }
+
   return (
-    <View style={styles.wrap}>
-      <Text style={styles.title}>Giderler</Text>
-      <View style={styles.form}>
-        <Text style={styles.section}>Yeni gider</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Açıklama"
-          value={description}
-          onChangeText={setDescription}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Tutar"
-          keyboardType="decimal-pad"
-          value={amount}
-          onChangeText={setAmount}
-        />
-        <View style={styles.row}>
-          <Chip
-            label="KDV dahil"
-            active={taxMode === "INCLUDED"}
-            onPress={() => setTaxMode("INCLUDED")}
-          />
-          <Chip
-            label="KDV hariç"
-            active={taxMode === "EXCLUDED"}
-            onPress={() => setTaxMode("EXCLUDED")}
-          />
-        </View>
-        <View style={styles.row}>
-          {["0", "1", "10", "20"].map((r) => (
-            <Chip
-              key={r}
-              label={`%${r}`}
-              active={vatRate === r}
-              onPress={() => setVatRate(r)}
-            />
-          ))}
-        </View>
-        <Text style={styles.label}>Kategori</Text>
-        <View style={styles.row}>
-          {categories.map((c) => (
-            <Chip
-              key={c.id}
-              label={c.name}
-              active={categoryId === c.id}
-              onPress={() => setCategoryId(c.id)}
-            />
-          ))}
-        </View>
-        <Text style={styles.label}>Tedarikçi</Text>
-        <View style={styles.row}>
-          <Chip
-            label="Yok"
-            active={!supplierId}
-            onPress={() => setSupplierId(null)}
-          />
-          {suppliers.map((s) => (
-            <Chip
-              key={s.id}
-              label={s.name}
-              active={supplierId === s.id}
-              onPress={() => setSupplierId(s.id)}
-            />
-          ))}
-        </View>
-        <Pressable style={styles.btn} onPress={create}>
-          <Text style={styles.btnText}>Kaydet</Text>
-        </Pressable>
-        {message ? <Text style={styles.msg}>{message}</Text> : null}
-      </View>
-      <Text style={styles.section}>Bu ay ({month}/{year})</Text>
+    <View style={ui.wrap}>
+      <Text style={ui.title}>Giderler</Text>
+      <PeriodRow month={month} year={year} setMonth={(n) => { setMonth(n); setPage(1); }} setYear={(n) => { setYear(n); setPage(1); }} onLoad={load} />
+      <Field placeholder="Ara" value={q} onChangeText={(t) => { setQ(t); setPage(1); }} />
+
+      {writable ? (
+        <Card>
+          <Text style={ui.section}>{editingId ? "Gideri düzenle" : "Yeni gider"}</Text>
+          <Field placeholder="Açıklama" value={description} onChangeText={setDescription} />
+          <Field placeholder="Tutar" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} />
+          <Field placeholder="Tarih YYYY-AA-GG" value={date} onChangeText={setDate} />
+          <View style={ui.row}>
+            <Chip label="KDV dahil" active={taxMode === "INCLUDED"} onPress={() => setTaxMode("INCLUDED")} />
+            <Chip label="KDV hariç" active={taxMode === "EXCLUDED"} onPress={() => setTaxMode("EXCLUDED")} />
+          </View>
+          <View style={ui.row}>
+            {["0", "1", "10", "20"].map((r) => (
+              <Chip key={r} label={`%${r}`} active={vatRate === r} onPress={() => setVatRate(r)} />
+            ))}
+          </View>
+          <Text style={ui.meta}>Kategori</Text>
+          <View style={ui.row}>
+            {categories.map((c) => (
+              <Chip key={c.id} label={c.name} active={categoryId === c.id} onPress={() => setCategoryId(c.id)} />
+            ))}
+          </View>
+          <Text style={ui.meta}>Tedarikçi</Text>
+          <View style={ui.row}>
+            <Chip label="Yok" active={!supplierId} onPress={() => setSupplierId(null)} />
+            {suppliers.map((s) => (
+              <Chip key={s.id} label={s.name} active={supplierId === s.id} onPress={() => setSupplierId(s.id)} />
+            ))}
+          </View>
+          <View style={ui.row}>
+            <Button label={editingId ? "Güncelle" : "Kaydet"} onPress={save} />
+            {editingId ? <Button label="Vazgeç" tone="ghost" onPress={resetForm} /> : null}
+          </View>
+          {message ? <Text style={ui.msg}>{message}</Text> : null}
+        </Card>
+      ) : null}
+
+      <Text style={ui.section}>
+        {month}/{year} · {total} kayıt
+      </Text>
       {items.map((item) => (
-        <View key={item.id} style={styles.card}>
-          <Text style={styles.cardTitle}>{item.description}</Text>
+        <Card key={item.id}>
+          <Text style={ui.cardTitle}>{item.description}</Text>
           <Text>{formatTry(Number(item.grossAmount))}</Text>
-          <Text style={styles.meta}>
+          <Text style={ui.meta}>
+            {String(item.expenseDate).slice(0, 10)} ·{" "}
             {item.categories?.map((c: any) => c.category.name).join(", ")}
-            {item.supplier ? ` · ${item.supplier.name}` : ""}
+            {item.supplier ? ` · ${item.supplier.name}` : ""} · KDV %{item.vatRate}
           </Text>
-        </View>
+          {item.attachments?.length ? (
+            <Text style={ui.meta}>{item.attachments.length} ek</Text>
+          ) : null}
+          {writable ? (
+            <View style={ui.row}>
+              <Button
+                label="Düzenle"
+                tone="ghost"
+                onPress={() => {
+                  setEditingId(item.id);
+                  setDescription(item.description);
+                  setAmount(String(item.amount));
+                  setDate(String(item.expenseDate).slice(0, 10));
+                  setTaxMode(item.taxMode);
+                  setVatRate(String(item.vatRate));
+                  setCategoryId(item.categories?.[0]?.categoryId || null);
+                  setSupplierId(item.supplierId || null);
+                }}
+              />
+              <Button label="Ek yükle" tone="ghost" onPress={() => pickFile(item.id)} />
+              <Button
+                label="Sil"
+                tone="danger"
+                onPress={async () => {
+                  if (!token) return;
+                  await api.deleteExpense(token, item.id);
+                  await load();
+                }}
+              />
+            </View>
+          ) : null}
+        </Card>
       ))}
+      <View style={ui.row}>
+        <Button label="Önceki" tone="ghost" disabled={page <= 1} onPress={() => setPage((p) => Math.max(1, p - 1))} />
+        <Text style={ui.meta}>Sayfa {page}</Text>
+        <Button label="Sonraki" tone="ghost" disabled={page * 50 >= total} onPress={() => setPage((p) => p + 1)} />
+      </View>
     </View>
   );
 }
-
-function Chip({
-  label,
-  active,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[styles.chip, active && styles.chipActive]}
-    >
-      <Text style={[styles.chipText, active && styles.chipTextActive]}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-const styles = StyleSheet.create({
-  wrap: { gap: 12 },
-  title: { fontSize: 24, fontWeight: "800" },
-  section: { fontSize: 16, fontWeight: "700", marginTop: 8 },
-  form: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    borderRadius: 8,
-    padding: 10,
-  },
-  row: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  label: { color: "#64748B", fontWeight: "600" },
-  chip: {
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  chipActive: { backgroundColor: "#0F766E", borderColor: "#0F766E" },
-  chipText: { color: "#334155" },
-  chipTextActive: { color: "#fff", fontWeight: "700" },
-  btn: {
-    backgroundColor: "#0F766E",
-    borderRadius: 8,
-    padding: 12,
-    alignItems: "center",
-  },
-  btnText: { color: "#fff", fontWeight: "700" },
-  msg: { color: "#0F766E" },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    gap: 4,
-  },
-  cardTitle: { fontWeight: "700" },
-  meta: { color: "#64748B", fontSize: 12 },
-});

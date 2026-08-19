@@ -7,6 +7,7 @@ uploads
 *.log
 .env
 .env.local
+*.tsbuildinfo
 apps/api/.env
 apps/mobile/.env
 apps/api/prisma/*.db

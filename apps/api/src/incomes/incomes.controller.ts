@@ -1,59 +1,51 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from "@nestjs/common";
+import { Role } from "@prisma/client";
 import {
-  IsArray,
-  IsDateString,
-  IsEnum,
-  IsNumber,
-  IsString,
-  Min,
-  MinLength,
-} from "class-validator";
-import { Role, TaxMode } from "@prisma/client";
+  IncomeCreateSchema,
+  IncomeUpdateSchema,
+  ListQuerySchema,
+} from "@konfor/shared";
 import { IncomesService } from "./incomes.service";
 import { Roles } from "../common/guards";
-
-class CreateIncomeDto {
-  @IsString()
-  @MinLength(1)
-  description!: string;
-
-  @IsDateString()
-  incomeDate!: string;
-
-  @IsNumber()
-  @Min(0.01)
-  amount!: number;
-
-  @IsEnum(TaxMode)
-  taxMode: TaxMode = TaxMode.INCLUDED;
-
-  @IsNumber()
-  vatRate = 20;
-
-  @IsArray()
-  @IsString({ each: true })
-  categoryIds!: string[];
-}
+import { zodPipe } from "../common/zod-pipe";
 
 @Controller("incomes")
 export class IncomesController {
   constructor(private incomes: IncomesService) {}
 
   @Get()
-  list(@Query("year") year?: string, @Query("month") month?: string) {
-    return this.incomes.list({
-      year: year ? Number(year) : undefined,
-      month: month ? Number(month) : undefined,
-    });
+  list(@Query(zodPipe(ListQuerySchema)) query: Record<string, unknown>) {
+    return this.incomes.list(query as never);
+  }
+
+  @Get(":id")
+  get(@Param("id") id: string) {
+    return this.incomes.get(id);
   }
 
   @Post()
   @Roles(Role.ADMIN, Role.FINANS)
   create(
-    @Body() body: CreateIncomeDto,
+    @Body(zodPipe(IncomeCreateSchema)) body: Record<string, unknown>,
     @Req() req: { user: { userId: string } },
   ) {
-    return this.incomes.create(body, req.user.userId);
+    return this.incomes.create(body as never, req.user.userId);
+  }
+
+  @Patch(":id")
+  @Roles(Role.ADMIN, Role.FINANS)
+  update(
+    @Param("id") id: string,
+    @Body(zodPipe(IncomeUpdateSchema)) body: Record<string, unknown>,
+    @Req() req: { user: { userId: string } },
+  ) {
+    return this.incomes.update(id, body as never, req.user.userId);
+  }
+
+  @Post(":id/restore")
+  @Roles(Role.ADMIN)
+  restore(@Param("id") id: string, @Req() req: { user: { userId: string } }) {
+    return this.incomes.restore(id, req.user.userId);
   }
 
   @Delete(":id")

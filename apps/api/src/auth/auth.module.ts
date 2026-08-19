@@ -7,6 +7,7 @@ import { AuthService } from "./auth.service";
 import { AuthController } from "./auth.controller";
 import { JwtStrategy } from "./jwt.strategy";
 import { JwtAuthGuard, RolesGuard } from "../common/guards";
+import { LoginRateLimiter } from "../common/rate-limit";
 
 @Module({
   imports: [
@@ -14,18 +15,23 @@ import { JwtAuthGuard, RolesGuard } from "../common/guards";
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret: config.get<string>("JWT_SECRET") || "dev-secret",
-        signOptions: {
-          expiresIn: 60 * 60 * 24 * 7,
-        },
-      }),
+      useFactory: (config: ConfigService) => {
+        const secret = config.get<string>("JWT_SECRET");
+        if (!secret) {
+          throw new Error("JWT_SECRET tanımlı olmalı (.env)");
+        }
+        return {
+          secret,
+          signOptions: { expiresIn: 15 * 60 },
+        };
+      },
     }),
   ],
   controllers: [AuthController],
   providers: [
     AuthService,
     JwtStrategy,
+    LoginRateLimiter,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],

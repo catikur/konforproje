@@ -1,34 +1,41 @@
 import { useCallback, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { useAuth } from "../../lib/auth";
-import { api, formatTry } from "../../lib/api";
+import { api, canWrite, formatTry, todayIso } from "../../lib/api";
+import { Button, Card, Chip, Field, PeriodRow, ui } from "../../components/ui";
 
 export default function IncomesScreen() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const writable = canWrite(user?.role);
   const now = new Date();
-  const [year] = useState(now.getFullYear());
-  const [month] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [q, setQ] = useState("");
   const [items, setItems] = useState<any[]>([]);
+  const [total, setTotal] = useState(0);
   const [categories, setCategories] = useState<any[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(todayIso());
+  const [taxMode, setTaxMode] = useState<"INCLUDED" | "EXCLUDED">("INCLUDED");
+  const [vatRate, setVatRate] = useState("20");
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
     const [list, cats] = await Promise.all([
-      api.incomes(token, year, month),
+      api.incomes(token, { year, month, q, pageSize: 50 }),
       api.categories(token),
     ]);
-    setItems(list);
-    const filtered = cats.filter(
-      (c) => c.type === "INCOME" || c.type === "BOTH",
-    );
+    setItems(list.items);
+    setTotal(list.total);
+    const filtered = cats.filter((c) => c.type === "INCOME" || c.type === "BOTH");
     setCategories(filtered);
     if (!categoryId && filtered[0]) setCategoryId(filtered[0].id);
-  }, [token, year, month, categoryId]);
+  }, [token, year, month, q, categoryId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -36,20 +43,28 @@ export default function IncomesScreen() {
     }, [load]),
   );
 
-  async function create() {
+  function resetForm() {
+    setEditingId(null);
+    setDescription("");
+    setAmount("");
+    setDate(todayIso());
+  }
+
+  async function save() {
     if (!token || !categoryId) return;
+    const body = {
+      description,
+      amount: Number(amount.replace(",", ".")),
+      incomeDate: date,
+      taxMode,
+      vatRate: Number(vatRate),
+      categoryIds: [categoryId],
+    };
     try {
-      await api.createIncome(token, {
-        description,
-        amount: Number(amount.replace(",", ".")),
-        incomeDate: new Date().toISOString().slice(0, 10),
-        taxMode: "INCLUDED",
-        vatRate: 20,
-        categoryIds: [categoryId],
-      });
-      setDescription("");
-      setAmount("");
-      setMessage("Gelir kaydedildi");
+      if (editingId) await api.updateIncome(token, editingId, body);
+      else await api.createIncome(token, body);
+      resetForm();
+      setMessage(editingId ? "Gelir güncellendi" : "Gelir kaydedildi");
       await load();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Kayıt başarısız");
@@ -57,97 +72,76 @@ export default function IncomesScreen() {
   }
 
   return (
-    <View style={styles.wrap}>
-      <Text style={styles.title}>Gelirler</Text>
-      <View style={styles.form}>
-        <TextInput
-          style={styles.input}
-          placeholder="Gelir açıklaması"
-          value={description}
-          onChangeText={setDescription}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Tutar"
-          keyboardType="decimal-pad"
-          value={amount}
-          onChangeText={setAmount}
-        />
-        <View style={styles.row}>
-          {categories.map((c) => (
-            <Pressable
-              key={c.id}
-              onPress={() => setCategoryId(c.id)}
-              style={[styles.chip, categoryId === c.id && styles.chipActive]}
-            >
-              <Text
-                style={[
-                  styles.chipText,
-                  categoryId === c.id && styles.chipTextActive,
-                ]}
-              >
-                {c.name}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-        <Pressable style={styles.btn} onPress={create}>
-          <Text style={styles.btnText}>Kaydet</Text>
-        </Pressable>
-        {message ? <Text style={styles.msg}>{message}</Text> : null}
-      </View>
+    <View style={ui.wrap}>
+      <Text style={ui.title}>Gelirler</Text>
+      <PeriodRow month={month} year={year} setMonth={setMonth} setYear={setYear} onLoad={load} />
+      <Field placeholder="Ara" value={q} onChangeText={setQ} />
+
+      {writable ? (
+        <Card>
+          <Text style={ui.section}>{editingId ? "Geliri düzenle" : "Yeni gelir"}</Text>
+          <Field placeholder="Açıklama" value={description} onChangeText={setDescription} />
+          <Field placeholder="Tutar" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} />
+          <Field placeholder="Tarih YYYY-AA-GG" value={date} onChangeText={setDate} />
+          <View style={ui.row}>
+            <Chip label="KDV dahil" active={taxMode === "INCLUDED"} onPress={() => setTaxMode("INCLUDED")} />
+            <Chip label="KDV hariç" active={taxMode === "EXCLUDED"} onPress={() => setTaxMode("EXCLUDED")} />
+          </View>
+          <View style={ui.row}>
+            {["0", "1", "10", "20"].map((r) => (
+              <Chip key={r} label={`%${r}`} active={vatRate === r} onPress={() => setVatRate(r)} />
+            ))}
+          </View>
+          <View style={ui.row}>
+            {categories.map((c) => (
+              <Chip key={c.id} label={c.name} active={categoryId === c.id} onPress={() => setCategoryId(c.id)} />
+            ))}
+          </View>
+          <View style={ui.row}>
+            <Button label={editingId ? "Güncelle" : "Kaydet"} onPress={save} />
+            {editingId ? <Button label="Vazgeç" tone="ghost" onPress={resetForm} /> : null}
+          </View>
+          {message ? <Text style={ui.msg}>{message}</Text> : null}
+        </Card>
+      ) : null}
+
+      <Text style={ui.section}>{total} kayıt</Text>
       {items.map((item) => (
-        <View key={item.id} style={styles.card}>
-          <Text style={styles.cardTitle}>{item.description}</Text>
+        <Card key={item.id}>
+          <Text style={ui.cardTitle}>{item.description}</Text>
           <Text>{formatTry(Number(item.grossAmount))}</Text>
-        </View>
+          <Text style={ui.meta}>
+            {String(item.incomeDate).slice(0, 10)} ·{" "}
+            {item.categories?.map((c: any) => c.category.name).join(", ")}
+          </Text>
+          {writable ? (
+            <View style={ui.row}>
+              <Button
+                label="Düzenle"
+                tone="ghost"
+                onPress={() => {
+                  setEditingId(item.id);
+                  setDescription(item.description);
+                  setAmount(String(item.amount));
+                  setDate(String(item.incomeDate).slice(0, 10));
+                  setTaxMode(item.taxMode);
+                  setVatRate(String(item.vatRate));
+                  setCategoryId(item.categories?.[0]?.categoryId || null);
+                }}
+              />
+              <Button
+                label="Sil"
+                tone="danger"
+                onPress={async () => {
+                  if (!token) return;
+                  await api.deleteIncome(token, item.id);
+                  await load();
+                }}
+              />
+            </View>
+          ) : null}
+        </Card>
       ))}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  wrap: { gap: 12 },
-  title: { fontSize: 24, fontWeight: "800" },
-  form: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    borderRadius: 8,
-    padding: 10,
-  },
-  row: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: {
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  chipActive: { backgroundColor: "#0F766E", borderColor: "#0F766E" },
-  chipText: { color: "#334155" },
-  chipTextActive: { color: "#fff", fontWeight: "700" },
-  btn: {
-    backgroundColor: "#0F766E",
-    borderRadius: 8,
-    padding: 12,
-    alignItems: "center",
-  },
-  btnText: { color: "#fff", fontWeight: "700" },
-  msg: { color: "#0F766E" },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  cardTitle: { fontWeight: "700" },
-});
