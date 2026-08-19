@@ -60,6 +60,7 @@ if or_key:
 p.write_text("\n".join(lines) + "\n")
 PY
 
-cd "$ROOT"
-pnpm --filter @konfor/api prisma:migrate
-pnpm --filter @konfor/api prisma:seed
+# Prisma CLI .env yükler; `tsx prisma/seed.ts` yüklemez.
+cd "$ROOT/apps/api"
+pnpm exec prisma migrate deploy
+pnpm exec prisma db seed
