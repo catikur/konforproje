@@ -314,7 +314,7 @@ export const api = {
     request("/recurring", { method: "POST", token, body: JSON.stringify(body) }),
   generateRecurring: (token: string, year: number, month: number) =>
     request(`/recurring/generate${qs({ year, month })}`, { method: "POST", token, body: "{}" }),
-  exportPdf: async (token: string, year: number, month: number) => {
+  exportPdf: async (token: string, year: number, month: number): Promise<Blob> => {
     const res = await fetch(
       `${API_URL}/reports/period/pdf${qs({ year, month })}`,
       { headers: { Authorization: `Bearer ${token}` } },

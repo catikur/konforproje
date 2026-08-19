@@ -27,7 +27,7 @@ export class ContractsService {
 
   create(data: Record<string, unknown>) {
     return this.prisma.contract.create({
-      data: this.map(data),
+      data: this.map(data) as never,
       include: { project: true, collections: true },
     }).then((r) => this.withTotals(r));
   }
@@ -36,7 +36,7 @@ export class ContractsService {
     await this.ensure(id);
     return this.prisma.contract.update({
       where: { id },
-      data: this.map(data, true),
+      data: this.map(data, true) as never,
       include: { project: true, collections: true },
     }).then((r) => this.withTotals(r));
   }
@@ -67,9 +67,9 @@ export class ContractsService {
     retainagePercent: unknown;
     collections?: Array<{ amount: unknown }>;
   }) {
-    const contractAmount = toNumber(row.contractAmount);
-    const retainage = contractAmount * (toNumber(row.retainagePercent) / 100);
-    const collected = (row.collections || []).reduce((s, c) => s + toNumber(c.amount), 0);
+    const contractAmount = toNumber(row.contractAmount as never);
+    const retainage = contractAmount * (toNumber(row.retainagePercent as never) / 100);
+    const collected = (row.collections || []).reduce((s, c) => s + toNumber(c.amount as never), 0);
     const net = contractAmount - retainage;
     return {
       ...serializeRecord(row),
@@ -80,7 +80,7 @@ export class ContractsService {
     };
   }
 
-  private map(data: Record<string, unknown>, partial = false) {
+  private map(data: Record<string, unknown>, _partial = false) {
     const out: Record<string, unknown> = {};
     const keys = [
       "name",
