@@ -1,0 +1,30 @@
+{
+  "name": "konforproje",
+  "private": true,
+  "packageManager": "pnpm@10.33.3",
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "dev:api": "pnpm --filter @konfor/api dev",
+    "dev:mobile": "pnpm --filter @konfor/mobile start",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "db:migrate": "pnpm --filter @konfor/api prisma:migrate",
+    "db:seed": "pnpm --filter @konfor/api prisma:seed",
+    "db:generate": "pnpm --filter @konfor/api prisma:generate"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.4",
+    "typescript": "^5.8.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "@prisma/client",
+      "@prisma/engines",
+      "argon2",
+      "esbuild",
+      "prisma"
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+node_modules
+dist
+.expo
+.turbo
+coverage
+uploads
+*.log
+.env
+.env.local
+apps/api/.env
+apps/mobile/.env
+apps/api/prisma/*.db
+apps/api/prisma/*.db-journal
