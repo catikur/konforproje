@@ -1,0 +1,19 @@
+{
+  "name": "Konfor Proje",
+  "install": "./scripts/cloud-install.sh",
+  "start": "./scripts/cloud-start.sh",
+  "terminals": [
+    {
+      "name": "api",
+      "command": "pnpm dev:api"
+    },
+    {
+      "name": "web",
+      "command": "pnpm --filter @konfor/mobile web"
+    }
+  ],
+  "ports": [
+    { "name": "API", "port": 3001 },
+    { "name": "Expo web", "port": 8081 }
+  ]
+}
