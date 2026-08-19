@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateMoney, round2, toNumber } from "./money";
+import { calculateMoney, round2, toNumber, toTry } from "./money";
 import { computePeriodSummary, shiftMonth } from "./period";
 import { ExpenseCreateSchema, ListQuerySchema, LoginSchema } from "./schemas";
 
@@ -70,6 +70,17 @@ describe("schemas", () => {
     ).toThrow();
   });
 
+  it("gider para birimi varsayılan TRY", () => {
+    const parsed = ExpenseCreateSchema.parse({
+      amount: 10,
+      description: "x",
+      expenseDate: "2026-08-01",
+      categoryIds: ["cat1"],
+    });
+    expect(parsed.currency).toBe("TRY");
+    expect(parsed.fxRate).toBe(1);
+  });
+
   it("liste query boş stringleri yok sayar", () => {
     const q = ListQuerySchema.parse({ year: "", month: "8", page: "2" });
     expect(q.year).toBeUndefined();
@@ -84,5 +95,10 @@ describe("helpers", () => {
     expect(round2(10.126)).toBe(10.13);
     expect(toNumber("12.5")).toBe(12.5);
     expect(toNumber(null)).toBe(0);
+  });
+
+  it("toTry kur çarpar", () => {
+    expect(toTry(10, 35.5)).toBe(355);
+    expect(toTry(10)).toBe(10);
   });
 });

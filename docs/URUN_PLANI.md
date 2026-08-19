@@ -328,6 +328,8 @@ sequenceDiagram
 
 ## 10. Uygulama fazları
 
+Faz 0–4 bu repoda uygulandı (Redis / OpenAI / MinIO ortam değişkenleri opsiyonel; yoksa yerel fallback).
+
 ### Faz 0 — İskelet (1 sprint)
 
 - Monorepo, NestJS + Prisma + Postgres, Expo Router web/mobil

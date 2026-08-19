@@ -12,10 +12,15 @@ import { useAuth } from "../../lib/auth";
 
 const links = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/capture", label: "Fiş" },
   { href: "/expenses", label: "Giderler" },
   { href: "/incomes", label: "Gelirler" },
   { href: "/backlog", label: "Backlog" },
+  { href: "/cashflow", label: "Nakit" },
+  { href: "/contracts", label: "Hakediş" },
+  { href: "/instruments", label: "Çek" },
   { href: "/reports", label: "Raporlar" },
+  { href: "/notifications", label: "Bildirim" },
   { href: "/account", label: "Hesap" },
   { href: "/admin", label: "Admin" },
 ] as const;

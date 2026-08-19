@@ -25,6 +25,14 @@ pnpm --filter @konfor/api prisma:seed
 
 Seed kullanıcı: `admin` / `admin123`
 
+Opsiyonel (OCR / kuyruk / nesne depolama):
+
+```bash
+# REDIS_URL, OPENAI_API_KEY, S3_ENDPOINT  →  apps/api/.env
+```
+
+Yoksa: OCR süreç içi çalışır (anahtar yoksa kullanıcı manuel doldurur), dosyalar `uploads/`, kuyruk `setImmediate`.
+
 ## Geliştirme
 
 ```bash
@@ -45,17 +53,20 @@ pnpm --filter @konfor/mobile web
 | `pnpm lint` | Tip kontrolü |
 | `pnpm test` | Unit testler (shared + api) |
 | `pnpm db:seed` | Seed |
+| `scripts/backup-db.sh` | Postgres dump (`BACKUP_DIR`, `DATABASE_URL`) |
 
-## MVP kapsamı
+## Kapsam (Faz 1–4)
 
 - JWT access (15 dk) + refresh token rotasyonu, login rate-limit
 - Gelir / gider / backlog CRUD, soft delete, audit
-- Dönem raporu (SQL aggregate), kategori/tedarikçi kırılımı, Excel export
-- Dashboard KPI + 12 aylık trend
-- Gider ekleri (PDF/görsel) — kimlik doğrulamalı indirme
-- Backlog: önceki ayı kopyala, fiili kayda bağla
-- Admin: kullanıcı / kategori / tedarikçi bakım, şifre sıfırla
-
-OCR, MinIO ve kuyruk **Faz 2**.
+- Dönem raporu (SQL aggregate), kategori/tedarikçi/şantiye kırılımı, Excel + PDF
+- Dashboard KPI + 12 aylık trend, bütçe uyarısı, onay bekleyenler
+- Gider ekleri (PDF/görsel) — kimlik doğrulamalı indirme; S3 veya yerel `uploads/`
+- OCR (OpenAI Vision, opsiyonel Redis/BullMQ); öneri kullanıcı onayıyla uygulanır
+- Fatura no tekilliği, şantiye/proje, onay limiti, bildirimler
+- Hakediş/sözleşme, nakit akışı, tedarikçi yaşlandırma
+- Banka/kasa, çek/senet, tekrarlayan gider, Excel içe aktarma
+- Çoklu para (EUR/USD + kur → raporlar TRY)
+- Mobil çevrimdışı gider taslağı + hızlı fiş (kamera/galeri)
 
 Ürün planı: [docs/URUN_PLANI.md](docs/URUN_PLANI.md)

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MoneyInputSchema, TaxModeSchema, VatRateSchema } from "./money";
+import { CurrencySchema, MoneyInputSchema, TaxModeSchema, VatRateSchema } from "./money";
 
 const emptyToUndef = (v: unknown) =>
   v === "" || v === null || v === undefined ? undefined : v;
@@ -32,6 +32,15 @@ export const BacklogStatusSchema = z.enum([
   "CANCELLED",
 ]);
 export type BacklogStatus = z.infer<typeof BacklogStatusSchema>;
+
+export const ApprovalStatusSchema = z.enum(["DRAFT", "PENDING", "APPROVED", "REJECTED"]);
+export type ApprovalStatus = z.infer<typeof ApprovalStatusSchema>;
+
+export const AccountTypeSchema = z.enum(["BANK", "CASH"]);
+export const InstrumentTypeSchema = z.enum(["CHECK", "NOTE"]);
+export const InstrumentDirectionSchema = z.enum(["GIVEN", "RECEIVED"]);
+export const InstrumentStatusSchema = z.enum(["OPEN", "PAID", "BOUNCED", "CANCELLED"]);
+export const RecurringTargetSchema = z.enum(["EXPENSE", "BACKLOG"]);
 
 export const DateOnlySchema = z
   .string()
@@ -94,6 +103,13 @@ export const ExpenseCreateSchema = MoneyInputSchema.extend({
   expenseDate: DateOnlySchema,
   categoryIds: z.array(z.string().min(1)).min(1),
   supplierId: z.string().min(1).optional().nullable(),
+  projectId: z.string().min(1).optional().nullable(),
+  accountId: z.string().min(1).optional().nullable(),
+  invoiceNo: z.string().max(80).optional().nullable(),
+  dueDate: DateOnlySchema.optional().nullable(),
+  currency: CurrencySchema,
+  fxRate: z.number().positive().default(1),
+  paidAmount: z.number().min(0).optional(),
 });
 
 export const ExpenseUpdateSchema = z.object({
@@ -104,20 +120,33 @@ export const ExpenseUpdateSchema = z.object({
   vatRate: VatRateSchema.optional(),
   categoryIds: z.array(z.string().min(1)).min(1).optional(),
   supplierId: z.string().min(1).optional().nullable(),
+  projectId: z.string().min(1).optional().nullable(),
+  accountId: z.string().min(1).optional().nullable(),
+  invoiceNo: z.string().max(80).optional().nullable(),
+  dueDate: DateOnlySchema.optional().nullable(),
+  currency: CurrencySchema.optional(),
+  fxRate: z.number().positive().optional(),
+  paidAmount: z.number().min(0).optional(),
+  applyOcr: z.boolean().optional(),
 });
 
 export const IncomeCreateSchema = MoneyInputSchema.extend({
   description: z.string().min(1).max(500),
   incomeDate: DateOnlySchema,
   categoryIds: z.array(z.string().min(1)).min(1),
+  projectId: z.string().min(1).optional().nullable(),
+  accountId: z.string().min(1).optional().nullable(),
+  contractId: z.string().min(1).optional().nullable(),
+  invoiceNo: z.string().max(80).optional().nullable(),
+  dueDate: DateOnlySchema.optional().nullable(),
+  currency: CurrencySchema,
+  fxRate: z.number().positive().default(1),
+  paidAmount: z.number().min(0).optional(),
 });
 
-export const IncomeUpdateSchema = z.object({
-  description: z.string().min(1).max(500).optional(),
-  incomeDate: DateOnlySchema.optional(),
-  amount: z.number().positive().optional(),
-  taxMode: TaxModeSchema.optional(),
-  vatRate: VatRateSchema.optional(),
+export const IncomeUpdateSchema = IncomeCreateSchema.partial().omit({
+  categoryIds: true,
+}).extend({
   categoryIds: z.array(z.string().min(1)).min(1).optional(),
 });
 
@@ -129,6 +158,9 @@ export const BacklogCreateSchema = z.object({
   description: z.string().min(1).max(500),
   categoryIds: z.array(z.string().min(1)).default([]),
   status: BacklogStatusSchema.default("PLANNED"),
+  projectId: z.string().min(1).optional().nullable(),
+  dueDate: DateOnlySchema.optional().nullable(),
+  currency: CurrencySchema,
 });
 
 export const BacklogUpdateSchema = BacklogCreateSchema.partial();
@@ -155,6 +187,8 @@ export const ListQuerySchema = z.object({
   q: z.preprocess(emptyToUndef, z.string().max(200).optional()),
   categoryId: z.preprocess(emptyToUndef, z.string().min(1).optional()),
   supplierId: z.preprocess(emptyToUndef, z.string().min(1).optional()),
+  projectId: z.preprocess(emptyToUndef, z.string().min(1).optional()),
+  approvalStatus: z.preprocess(emptyToUndef, ApprovalStatusSchema.optional()),
   page: intWithDefault(1, 10_000, 1),
   pageSize: intWithDefault(1, 100, 50),
 });
@@ -173,3 +207,93 @@ export type Paginated<T> = {
   page: number;
   pageSize: number;
 };
+
+export const ProjectSchema = z.object({
+  name: z.string().min(1).max(160),
+  code: z.string().max(40).optional().nullable(),
+  notes: z.string().max(1000).optional().nullable(),
+  isActive: z.boolean().default(true),
+});
+export const ProjectUpdateSchema = ProjectSchema.partial();
+
+export const SettingsUpdateSchema = z.object({
+  companyName: z.string().min(1).max(160).optional(),
+  approvalLimit: z.number().min(0).optional(),
+  defaultVatRate: VatRateSchema.optional(),
+  defaultCurrency: CurrencySchema.optional(),
+});
+
+export const FinanceAccountSchema = z.object({
+  name: z.string().min(1).max(120),
+  type: AccountTypeSchema.default("BANK"),
+  currency: CurrencySchema,
+  iban: z.string().max(34).optional().nullable(),
+  openingBalance: z.number().default(0),
+  isActive: z.boolean().default(true),
+});
+export const FinanceAccountUpdateSchema = FinanceAccountSchema.partial();
+
+export const BudgetSchema = z.object({
+  periodYear: z.number().int().min(2000).max(2100),
+  periodMonth: z.number().int().min(1).max(12),
+  direction: BacklogDirectionSchema,
+  amount: z.number().positive(),
+  categoryId: z.string().min(1).optional().nullable(),
+  projectId: z.string().min(1).optional().nullable(),
+});
+
+export const ContractSchema = z.object({
+  name: z.string().min(1).max(160),
+  counterparty: z.string().min(1).max(160),
+  contractAmount: z.number().positive(),
+  retainagePercent: z.number().min(0).max(100).default(0),
+  startDate: DateOnlySchema.optional().nullable(),
+  endDate: DateOnlySchema.optional().nullable(),
+  notes: z.string().max(1000).optional().nullable(),
+  projectId: z.string().min(1).optional().nullable(),
+  supplierId: z.string().min(1).optional().nullable(),
+  isActive: z.boolean().default(true),
+});
+export const ContractUpdateSchema = ContractSchema.partial();
+
+export const ContractCollectionSchema = z.object({
+  amount: z.number().positive(),
+  collectedAt: DateOnlySchema,
+  description: z.string().max(300).optional().nullable(),
+});
+
+export const RecurringSchema = z.object({
+  description: z.string().min(1).max(500),
+  amount: z.number().positive(),
+  taxMode: TaxModeSchema.default("INCLUDED"),
+  vatRate: VatRateSchema.default(20),
+  dayOfMonth: z.number().int().min(1).max(28).default(1),
+  target: RecurringTargetSchema.default("EXPENSE"),
+  categoryId: z.string().min(1).optional().nullable(),
+  supplierId: z.string().min(1).optional().nullable(),
+  projectId: z.string().min(1).optional().nullable(),
+  isActive: z.boolean().default(true),
+});
+export const RecurringUpdateSchema = RecurringSchema.partial();
+
+export const InstrumentSchema = z.object({
+  type: InstrumentTypeSchema,
+  direction: InstrumentDirectionSchema,
+  amount: z.number().positive(),
+  dueDate: DateOnlySchema,
+  counterparty: z.string().min(1).max(160),
+  status: InstrumentStatusSchema.default("OPEN"),
+  notes: z.string().max(500).optional().nullable(),
+  accountId: z.string().min(1).optional().nullable(),
+});
+export const InstrumentUpdateSchema = InstrumentSchema.partial();
+
+export const ApproveSchema = z.object({
+  approve: z.boolean(),
+  note: z.string().max(300).optional(),
+});
+
+export const OcrApplySchema = z.object({
+  fields: z.array(z.string()).optional(),
+});
+

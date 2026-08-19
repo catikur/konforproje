@@ -24,6 +24,7 @@ export class ReportsService {
       expenseCats,
       suppliers,
       pendingBacklog,
+      projects,
     ] = await Promise.all([
       this.prisma.income.aggregate({
         where: { deletedAt: null, incomeDate: { gte: start, lt: end } },
@@ -31,7 +32,11 @@ export class ReportsService {
         _count: true,
       }),
       this.prisma.expense.aggregate({
-        where: { deletedAt: null, expenseDate: { gte: start, lt: end } },
+        where: {
+          deletedAt: null,
+          approvalStatus: "APPROVED",
+          expenseDate: { gte: start, lt: end },
+        },
         _sum: { grossAmount: true, netAmount: true, vatAmount: true },
         _count: true,
       }),
@@ -71,6 +76,7 @@ export class ReportsService {
         orderBy: { expectedAmount: "desc" },
         take: 50,
       }),
+      this.projectBreakdown(year, month),
     ]);
 
     const summary = computePeriodSummary({
@@ -105,6 +111,7 @@ export class ReportsService {
         status: b.status,
         categories: b.categories.map((c) => c.category.name),
       })),
+      projects,
     };
   }
 
@@ -128,7 +135,7 @@ export class ReportsService {
                EXTRACT(MONTH FROM "expenseDate")::int AS m,
                SUM("grossAmount") AS gross
         FROM "Expense"
-        WHERE "deletedAt" IS NULL AND "expenseDate" >= ${startDate}
+        WHERE "deletedAt" IS NULL AND "approvalStatus" = 'APPROVED' AND "expenseDate" >= ${startDate}
         GROUP BY 1, 2
       `,
       this.prisma.$queryRaw<
@@ -187,7 +194,7 @@ export class ReportsService {
         orderBy: { incomeDate: "asc" },
       }),
       this.prisma.expense.findMany({
-        where: { deletedAt: null, expenseDate: { gte: start, lt: end } },
+        where: { deletedAt: null, approvalStatus: "APPROVED", expenseDate: { gte: start, lt: end } },
         include: {
           categories: { include: { category: true } },
           supplier: true,
@@ -291,7 +298,7 @@ export class ReportsService {
       FROM "Expense" e
       JOIN "ExpenseCategory" ec ON ec."expenseId" = e.id
       JOIN "Category" c ON c.id = ec."categoryId"
-      WHERE e."deletedAt" IS NULL AND e."expenseDate" >= ${start} AND e."expenseDate" < ${end}
+      WHERE e."deletedAt" IS NULL AND e."approvalStatus" = 'APPROVED' AND e."expenseDate" >= ${start} AND e."expenseDate" < ${end}
       GROUP BY c.id, c.name, c.color
       ORDER BY SUM(e."grossAmount") DESC
     `;
@@ -305,10 +312,166 @@ export class ReportsService {
       SELECT s.id, COALESCE(s.name, 'Tedarikçisiz') AS name, SUM(e."grossAmount") AS gross
       FROM "Expense" e
       LEFT JOIN "Supplier" s ON s.id = e."supplierId"
-      WHERE e."deletedAt" IS NULL AND e."expenseDate" >= ${start} AND e."expenseDate" < ${end}
+      WHERE e."deletedAt" IS NULL AND e."approvalStatus" = 'APPROVED' AND e."expenseDate" >= ${start} AND e."expenseDate" < ${end}
       GROUP BY s.id, s.name
       ORDER BY SUM(e."grossAmount") DESC
     `;
     return rows.map((r) => ({ ...r, gross: toNumber(r.gross) }));
+  }
+
+  async cashflow(year: number, month: number) {
+    const { start, end } = monthRangeUtc(year, month);
+    const [expenses, incomes, backlog, instruments] = await Promise.all([
+      this.prisma.expense.findMany({
+        where: {
+          deletedAt: null,
+          approvalStatus: { not: "REJECTED" },
+          OR: [
+            { dueDate: { gte: start, lt: end } },
+            { dueDate: null, expenseDate: { gte: start, lt: end } },
+          ],
+        },
+      }),
+      this.prisma.income.findMany({
+        where: {
+          deletedAt: null,
+          OR: [
+            { dueDate: { gte: start, lt: end } },
+            { dueDate: null, incomeDate: { gte: start, lt: end } },
+          ],
+        },
+      }),
+      this.prisma.backlogItem.findMany({
+        where: {
+          deletedAt: null,
+          status: { not: "CANCELLED" },
+          periodYear: year,
+          periodMonth: month,
+        },
+      }),
+      this.prisma.instrument.findMany({
+        where: { deletedAt: null, status: "OPEN", dueDate: { gte: start, lt: end } },
+      }),
+    ]);
+    const weeks: Array<{ week: number; inflow: number; outflow: number; items: string[] }> = [];
+    for (let w = 1; w <= 5; w++) weeks.push({ week: w, inflow: 0, outflow: 0, items: [] });
+    const weekOf = (d: Date) => Math.min(5, Math.floor((d.getUTCDate() - 1) / 7) + 1);
+    for (const i of incomes) {
+      const d = i.dueDate || i.incomeDate;
+      const w = weeks[weekOf(d) - 1];
+      w.inflow += toNumber(i.grossAmount) - toNumber(i.paidAmount);
+      w.items.push(`Gelir ${i.description}`);
+    }
+    for (const e of expenses) {
+      const d = e.dueDate || e.expenseDate;
+      const w = weeks[weekOf(d) - 1];
+      w.outflow += toNumber(e.grossAmount) - toNumber(e.paidAmount);
+      w.items.push(`Gider ${e.description}`);
+    }
+    for (const b of backlog) {
+      const w = weeks[0];
+      if (b.direction === "INCOME") w.inflow += toNumber(b.expectedAmount);
+      else w.outflow += toNumber(b.expectedAmount);
+      w.items.push(`Plan ${b.description}`);
+    }
+    for (const n of instruments) {
+      const w = weeks[weekOf(n.dueDate) - 1];
+      if (n.direction === "RECEIVED") w.inflow += toNumber(n.amount);
+      else w.outflow += toNumber(n.amount);
+      w.items.push(`${n.type} ${n.counterparty}`);
+    }
+    return weeks.map((w) => ({ ...w, net: w.inflow - w.outflow }));
+  }
+
+  async aging() {
+    const today = new Date();
+    const expenses = await this.prisma.expense.findMany({
+      where: { deletedAt: null, approvalStatus: "APPROVED" },
+      include: { supplier: true },
+    });
+    const buckets = { d0_30: 0, d31_60: 0, d61_90: 0, d90p: 0 };
+    const bySupplier: Record<string, { name: string; open: number; d0_30: number; d31_60: number; d61_90: number; d90p: number }> = {};
+    for (const e of expenses) {
+      const open = toNumber(e.grossAmount) - toNumber(e.paidAmount);
+      if (open <= 0) continue;
+      const due = e.dueDate || e.expenseDate;
+      const days = Math.floor((today.getTime() - due.getTime()) / 86400000);
+      const key = !e.supplier ? "Tedarikçisiz" : e.supplier.name;
+      if (!bySupplier[key]) {
+        bySupplier[key] = { name: key, open: 0, d0_30: 0, d31_60: 0, d61_90: 0, d90p: 0 };
+      }
+      bySupplier[key].open += open;
+      if (days <= 30) {
+        buckets.d0_30 += open;
+        bySupplier[key].d0_30 += open;
+      } else if (days <= 60) {
+        buckets.d31_60 += open;
+        bySupplier[key].d31_60 += open;
+      } else if (days <= 90) {
+        buckets.d61_90 += open;
+        bySupplier[key].d61_90 += open;
+      } else {
+        buckets.d90p += open;
+        bySupplier[key].d90p += open;
+      }
+    }
+    return { buckets, suppliers: Object.values(bySupplier) };
+  }
+
+  async projectBreakdown(year: number, month: number) {
+    const { start, end } = monthRangeUtc(year, month);
+    const rows = await this.prisma.$queryRaw<
+      Array<{ id: string | null; name: string; income: Prisma.Decimal; expense: Prisma.Decimal }>
+    >`
+      SELECT p.id, COALESCE(p.name, 'Projesiz') AS name,
+        COALESCE((
+          SELECT SUM(i."grossAmount") FROM "Income" i
+          WHERE i."deletedAt" IS NULL AND i."projectId" IS NOT DISTINCT FROM p.id
+            AND i."incomeDate" >= ${start} AND i."incomeDate" < ${end}
+        ), 0) AS income,
+        COALESCE((
+          SELECT SUM(e."grossAmount") FROM "Expense" e
+          WHERE e."deletedAt" IS NULL AND e."approvalStatus" = 'APPROVED'
+            AND e."projectId" IS NOT DISTINCT FROM p.id
+            AND e."expenseDate" >= ${start} AND e."expenseDate" < ${end}
+        ), 0) AS expense
+      FROM (SELECT id, name FROM "Project" WHERE "deletedAt" IS NULL
+            UNION ALL SELECT NULL::text, 'Projesiz') p
+    `;
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      income: toNumber(r.income),
+      expense: toNumber(r.expense),
+      net: toNumber(r.income) - toNumber(r.expense),
+    }));
+  }
+
+  async pdf(year: number, month: number): Promise<Buffer> {
+    const period = await this.period(year, month);
+    const PDFDocument = (await import("pdfkit")).default;
+    const doc = new PDFDocument({ size: "A4", margin: 48 });
+    const chunks: Buffer[] = [];
+    doc.on("data", (c: Buffer) => chunks.push(c));
+    const done = new Promise<Buffer>((resolve) => {
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+    });
+    doc.fontSize(18).text("Konfor Proje — Dönem özeti", { align: "center" });
+    doc.moveDown();
+    doc.fontSize(12).text(`Dönem: ${String(month).padStart(2, "0")}/${year}`);
+    doc.moveDown();
+    const lines: Array<[string, number]> = [
+      ["Fiili gelir", period.actualIncome],
+      ["Fiili gider", period.actualExpense],
+      ["Net fiili", period.netActual],
+      ["Beklenen gelir", period.expectedIncome],
+      ["Beklenen gider", period.expectedExpense],
+      ["Net beklenen", period.netExpected],
+    ];
+    for (const [label, value] of lines) {
+      doc.text(`${label}: ${value.toLocaleString("tr-TR", { style: "currency", currency: "TRY" })}`);
+    }
+    doc.end();
+    return done;
   }
 }

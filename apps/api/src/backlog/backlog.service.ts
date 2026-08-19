@@ -7,6 +7,7 @@ import { writeAudit } from "../common/audit";
 
 const include = {
   categories: { include: { category: true } },
+  project: true,
   links: {
     include: {
       expense: true,
@@ -59,6 +60,9 @@ export class BacklogService {
       description: string;
       categoryIds?: string[];
       status?: BacklogStatus;
+      projectId?: string | null;
+      dueDate?: string | Date | null;
+      currency?: string;
     },
     userId: string,
   ) {
@@ -70,6 +74,8 @@ export class BacklogService {
         expectedAmount: data.expectedAmount,
         description: data.description,
         status: data.status || BacklogStatus.PLANNED,
+        projectId: data.projectId || null,
+        currency: data.currency || "TRY",
         createdById: userId,
         categories: {
           create: (data.categoryIds || []).map((categoryId) => ({
@@ -296,6 +302,7 @@ export class BacklogService {
     if (params.categoryId) {
       and.push({ categories: { some: { categoryId: params.categoryId } } });
     }
+    if (params.projectId) and.push({ projectId: params.projectId });
     return { AND: and };
   }
 

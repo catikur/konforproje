@@ -43,6 +43,40 @@ enum OcrStatus {
   FAILED
 }
 
+enum ApprovalStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AccountType {
+  BANK
+  CASH
+}
+
+enum InstrumentType {
+  CHECK
+  NOTE
+}
+
+enum InstrumentDirection {
+  GIVEN
+  RECEIVED
+}
+
+enum InstrumentStatus {
+  OPEN
+  PAID
+  BOUNCED
+  CANCELLED
+}
+
+enum RecurringTarget {
+  EXPENSE
+  BACKLOG
+}
+
 model User {
   id           String    @id @default(cuid())
   username     String    @unique
@@ -54,11 +88,13 @@ model User {
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
-  expenses      Expense[]      @relation("ExpenseCreatedBy")
-  incomes       Income[]       @relation("IncomeCreatedBy")
-  backlog       BacklogItem[]  @relation("BacklogCreatedBy")
-  audits        AuditLog[]
-  refreshTokens RefreshToken[]
+  expenses       Expense[]       @relation("ExpenseCreatedBy")
+  incomes        Income[]        @relation("IncomeCreatedBy")
+  backlog        BacklogItem[]   @relation("BacklogCreatedBy")
+  audits         AuditLog[]
+  refreshTokens  RefreshToken[]
+  notifications  Notification[]
+  approvedExpenses Expense[]     @relation("ExpenseApprovedBy")
 }
 
 model RefreshToken {
@@ -73,20 +109,50 @@ model RefreshToken {
   @@index([userId])
 }
 
-model Category {
-  id        String       @id @default(cuid())
+model AppSettings {
+  id             String  @id @default("default")
+  companyName    String  @default("Konfor Proje")
+  approvalLimit  Decimal @default(0) @db.Decimal(14, 2)
+  defaultVatRate Int     @default(20)
+  defaultCurrency String @default("TRY")
+  updatedAt      DateTime @updatedAt
+}
+
+model Project {
+  id        String    @id @default(cuid())
   name      String
-  type      CategoryType @default(BOTH)
-  color     String       @default("#2563EB")
-  sortOrder Int          @default(0)
-  isActive  Boolean      @default(true)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  code      String?
+  notes     String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  expenses ExpenseCategory[]
-  incomes  IncomeCategory[]
-  backlog  BacklogCategory[]
+  expenses   Expense[]
+  incomes    Income[]
+  backlog    BacklogItem[]
+  budgets    Budget[]
+  contracts  Contract[]
+  recurring  RecurringRule[]
+}
+
+model Category {
+  id          String       @id @default(cuid())
+  name        String
+  type        CategoryType @default(BOTH)
+  color       String       @default("#2563EB")
+  sortOrder   Int          @default(0)
+  isActive    Boolean      @default(true)
+  budgetLimit Decimal?     @db.Decimal(14, 2)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  deletedAt   DateTime?
+
+  expenses  ExpenseCategory[]
+  incomes   IncomeCategory[]
+  backlog   BacklogCategory[]
+  budgets   Budget[]
+  recurring RecurringRule[]
 }
 
 model Supplier {
@@ -99,33 +165,67 @@ model Supplier {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  expenses Expense[]
+  expenses  Expense[]
+  contracts Contract[]
+  recurring RecurringRule[]
+}
+
+model FinanceAccount {
+  id             String      @id @default(cuid())
+  name           String
+  type           AccountType @default(BANK)
+  currency       String      @default("TRY")
+  iban           String?
+  openingBalance Decimal     @default(0) @db.Decimal(14, 2)
+  isActive       Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  deletedAt      DateTime?
+
+  expenses     Expense[]
+  incomes      Income[]
+  instruments  Instrument[]
 }
 
 model Expense {
-  id          String    @id @default(cuid())
-  description String
-  expenseDate DateTime  @db.Date
-  amount      Decimal   @db.Decimal(14, 2)
-  taxMode     TaxMode   @default(INCLUDED)
-  vatRate     Int       @default(20)
-  netAmount   Decimal   @db.Decimal(14, 2)
-  vatAmount   Decimal   @db.Decimal(14, 2)
-  grossAmount Decimal   @db.Decimal(14, 2)
-  currency    String    @default("TRY")
-  ocrStatus   OcrStatus @default(NONE)
-  ocrRawJson  Json?
-  supplierId  String?
-  supplier    Supplier? @relation(fields: [supplierId], references: [id])
-  createdById String
-  createdBy   User      @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
+  id             String          @id @default(cuid())
+  description    String
+  expenseDate    DateTime        @db.Date
+  dueDate        DateTime?       @db.Date
+  amount         Decimal         @db.Decimal(14, 2)
+  taxMode        TaxMode         @default(INCLUDED)
+  vatRate        Int             @default(20)
+  netAmount      Decimal         @db.Decimal(14, 2)
+  vatAmount      Decimal         @db.Decimal(14, 2)
+  grossAmount    Decimal         @db.Decimal(14, 2)
+  currency       String          @default("TRY")
+  fxRate         Decimal         @default(1) @db.Decimal(12, 6)
+  paidAmount     Decimal         @default(0) @db.Decimal(14, 2)
+  invoiceNo      String?
+  approvalStatus ApprovalStatus  @default(APPROVED)
+  ocrStatus      OcrStatus       @default(NONE)
+  ocrRawJson     Json?
+  supplierId     String?
+  supplier       Supplier?       @relation(fields: [supplierId], references: [id])
+  projectId      String?
+  project        Project?        @relation(fields: [projectId], references: [id])
+  accountId      String?
+  account        FinanceAccount? @relation(fields: [accountId], references: [id])
+  createdById    String
+  createdBy      User            @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+  approvedById   String?
+  approvedBy     User?           @relation("ExpenseApprovedBy", fields: [approvedById], references: [id])
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
 
-  categories  ExpenseCategory[]
-  attachments Attachment[]
+  categories   ExpenseCategory[]
+  attachments  Attachment[]
   backlogLinks BacklogLink[]
+
+  @@index([invoiceNo])
+  @@index([projectId])
+  @@index([approvalStatus])
 }
 
 model ExpenseCategory {
@@ -138,24 +238,36 @@ model ExpenseCategory {
 }
 
 model Income {
-  id          String   @id @default(cuid())
+  id          String          @id @default(cuid())
   description String
-  incomeDate  DateTime @db.Date
-  amount      Decimal  @db.Decimal(14, 2)
-  taxMode     TaxMode  @default(INCLUDED)
-  vatRate     Int      @default(20)
-  netAmount   Decimal  @db.Decimal(14, 2)
-  vatAmount   Decimal  @db.Decimal(14, 2)
-  grossAmount Decimal  @db.Decimal(14, 2)
-  currency    String   @default("TRY")
+  incomeDate  DateTime        @db.Date
+  dueDate     DateTime?       @db.Date
+  amount      Decimal         @db.Decimal(14, 2)
+  taxMode     TaxMode         @default(INCLUDED)
+  vatRate     Int             @default(20)
+  netAmount   Decimal         @db.Decimal(14, 2)
+  vatAmount   Decimal         @db.Decimal(14, 2)
+  grossAmount Decimal         @db.Decimal(14, 2)
+  currency    String          @default("TRY")
+  fxRate      Decimal         @default(1) @db.Decimal(12, 6)
+  paidAmount  Decimal         @default(0) @db.Decimal(14, 2)
+  invoiceNo   String?
+  contractId  String?
+  contract    Contract?       @relation(fields: [contractId], references: [id])
+  projectId   String?
+  project     Project?        @relation(fields: [projectId], references: [id])
+  accountId   String?
+  account     FinanceAccount? @relation(fields: [accountId], references: [id])
   createdById String
-  createdBy   User     @relation("IncomeCreatedBy", fields: [createdById], references: [id])
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdBy   User            @relation("IncomeCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
   deletedAt   DateTime?
 
   categories   IncomeCategory[]
   backlogLinks BacklogLink[]
+
+  @@index([projectId])
 }
 
 model IncomeCategory {
@@ -175,6 +287,10 @@ model BacklogItem {
   expectedAmount Decimal          @db.Decimal(14, 2)
   description    String
   status         BacklogStatus    @default(PLANNED)
+  dueDate        DateTime?        @db.Date
+  currency       String           @default("TRY")
+  projectId      String?
+  project        Project?         @relation(fields: [projectId], references: [id])
   createdById    String
   createdBy      User             @relation("BacklogCreatedBy", fields: [createdById], references: [id])
   createdAt      DateTime         @default(now())
@@ -185,6 +301,7 @@ model BacklogItem {
   links      BacklogLink[]
 
   @@index([periodYear, periodMonth])
+  @@index([projectId])
 }
 
 model BacklogCategory {
@@ -197,14 +314,14 @@ model BacklogCategory {
 }
 
 model BacklogLink {
-  id        String       @id @default(cuid())
+  id        String      @id @default(cuid())
   backlogId String
-  backlog   BacklogItem  @relation(fields: [backlogId], references: [id], onDelete: Cascade)
+  backlog   BacklogItem @relation(fields: [backlogId], references: [id], onDelete: Cascade)
   expenseId String?
-  expense   Expense?     @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  expense   Expense?    @relation(fields: [expenseId], references: [id], onDelete: Cascade)
   incomeId  String?
-  income    Income?      @relation(fields: [incomeId], references: [id], onDelete: Cascade)
-  createdAt DateTime     @default(now())
+  income    Income?     @relation(fields: [incomeId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
 
   @@index([backlogId])
 }
@@ -214,10 +331,111 @@ model Attachment {
   expenseId    String
   expense      Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
   filename     String
+  storageKey   String
   originalName String
   mimeType     String
   size         Int
   createdAt    DateTime @default(now())
+}
+
+model Budget {
+  id         String           @id @default(cuid())
+  periodYear Int
+  periodMonth Int
+  direction  BacklogDirection
+  amount     Decimal          @db.Decimal(14, 2)
+  categoryId String?
+  category   Category?        @relation(fields: [categoryId], references: [id])
+  projectId  String?
+  project    Project?         @relation(fields: [projectId], references: [id])
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@index([periodYear, periodMonth])
+}
+
+model Contract {
+  id               String    @id @default(cuid())
+  name             String
+  counterparty     String
+  contractAmount   Decimal   @db.Decimal(14, 2)
+  retainagePercent Decimal   @default(0) @db.Decimal(5, 2)
+  startDate        DateTime? @db.Date
+  endDate          DateTime? @db.Date
+  notes            String?
+  projectId        String?
+  project          Project?  @relation(fields: [projectId], references: [id])
+  supplierId       String?
+  supplier         Supplier? @relation(fields: [supplierId], references: [id])
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  collections ContractCollection[]
+  incomes     Income[]
+}
+
+model ContractCollection {
+  id          String   @id @default(cuid())
+  contractId  String
+  contract    Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  amount      Decimal  @db.Decimal(14, 2)
+  collectedAt DateTime @db.Date
+  description String?
+  createdAt   DateTime @default(now())
+}
+
+model RecurringRule {
+  id          String          @id @default(cuid())
+  description String
+  amount      Decimal         @db.Decimal(14, 2)
+  taxMode     TaxMode         @default(INCLUDED)
+  vatRate     Int             @default(20)
+  dayOfMonth  Int             @default(1)
+  target      RecurringTarget @default(EXPENSE)
+  categoryId  String?
+  category    Category?       @relation(fields: [categoryId], references: [id])
+  supplierId  String?
+  supplier    Supplier?       @relation(fields: [supplierId], references: [id])
+  projectId   String?
+  project     Project?        @relation(fields: [projectId], references: [id])
+  isActive    Boolean         @default(true)
+  lastGeneratedYm String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model Instrument {
+  id          String               @id @default(cuid())
+  type        InstrumentType
+  direction   InstrumentDirection
+  amount      Decimal              @db.Decimal(14, 2)
+  dueDate     DateTime             @db.Date
+  counterparty String
+  status      InstrumentStatus     @default(OPEN)
+  notes       String?
+  accountId   String?
+  account     FinanceAccount?      @relation(fields: [accountId], references: [id])
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  deletedAt   DateTime?
+
+  @@index([dueDate, status])
+}
+
+model Notification {
+  id         String    @id @default(cuid())
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title      String
+  body       String
+  entityType String?
+  entityId   String?
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, readAt])
 }
 
 model AuditLog {

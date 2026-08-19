@@ -36,6 +36,13 @@ export type PeriodReport = {
     status: string;
     categories: string[];
   }>;
+  projects?: Array<{
+    id: string | null;
+    name: string;
+    income: number;
+    expense: number;
+    net: number;
+  }>;
 };
 
 export type TrendPoint = {
@@ -257,6 +264,92 @@ export const api = {
     request("/suppliers", { method: "POST", token, body: JSON.stringify(body) }),
   updateSupplier: (token: string, id: string, body: unknown) =>
     request(`/suppliers/${id}`, { method: "PATCH", token, body: JSON.stringify(body) }),
+  applyOcr: (token: string, id: string) =>
+    request(`/expenses/${id}/ocr/apply`, { method: "POST", token, body: "{}" }),
+  decideExpense: (token: string, id: string, approve: boolean) =>
+    request(`/expenses/${id}/decide`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ approve }),
+    }),
+  projects: (token: string, activeOnly = true) =>
+    request<any[]>(`/projects${qs({ activeOnly: activeOnly ? "true" : undefined })}`, { token }),
+  createProject: (token: string, body: unknown) =>
+    request("/projects", { method: "POST", token, body: JSON.stringify(body) }),
+  settings: (token: string) => request<any>("/settings", { token }),
+  updateSettings: (token: string, body: unknown) =>
+    request("/settings", { method: "PATCH", token, body: JSON.stringify(body) }),
+  notifications: (token: string) => request<any[]>("/notifications", { token }),
+  unreadCount: (token: string) =>
+    request<{ count: number }>("/notifications/unread-count", { token }),
+  readNotification: (token: string, id: string) =>
+    request(`/notifications/${id}/read`, { method: "PATCH", token, body: "{}" }),
+  cashflow: (token: string, year: number, month: number) =>
+    request<any[]>(`/reports/cashflow${qs({ year, month })}`, { token }),
+  aging: (token: string) => request<any>("/reports/aging", { token }),
+  budgetAlerts: (token: string, year: number, month: number) =>
+    request<any[]>(`/budgets/alerts${qs({ year, month })}`, { token }),
+  createBudget: (token: string, body: unknown) =>
+    request("/budgets", { method: "POST", token, body: JSON.stringify(body) }),
+  contracts: (token: string) => request<any[]>("/contracts", { token }),
+  createContract: (token: string, body: unknown) =>
+    request("/contracts", { method: "POST", token, body: JSON.stringify(body) }),
+  addCollection: (token: string, id: string, body: unknown) =>
+    request(`/contracts/${id}/collections`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(body),
+    }),
+  accounts: (token: string) => request<any[]>("/accounts", { token }),
+  accountBalances: (token: string) => request<any[]>("/accounts/balances", { token }),
+  createAccount: (token: string, body: unknown) =>
+    request("/accounts", { method: "POST", token, body: JSON.stringify(body) }),
+  instruments: (token: string) => request<any[]>("/instruments", { token }),
+  createInstrument: (token: string, body: unknown) =>
+    request("/instruments", { method: "POST", token, body: JSON.stringify(body) }),
+  updateInstrument: (token: string, id: string, body: unknown) =>
+    request(`/instruments/${id}`, { method: "PATCH", token, body: JSON.stringify(body) }),
+  recurring: (token: string) => request<any[]>("/recurring", { token }),
+  createRecurring: (token: string, body: unknown) =>
+    request("/recurring", { method: "POST", token, body: JSON.stringify(body) }),
+  generateRecurring: (token: string, year: number, month: number) =>
+    request(`/recurring/generate${qs({ year, month })}`, { method: "POST", token, body: "{}" }),
+  exportPdf: async (token: string, year: number, month: number) => {
+    const res = await fetch(
+      `${API_URL}/reports/period/pdf${qs({ year, month })}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (res.status === 401 && tokenStore.refresh) {
+      const next = await refreshAccess();
+      if (next) return api.exportPdf(next, year, month);
+    }
+    if (!res.ok) await parseError(res);
+    return res.blob();
+  },
+  budgets: (token: string, year: number, month: number) =>
+    request<any[]>(`/budgets${qs({ year, month })}`, { token }),
+  updateProject: (token: string, id: string, body: unknown) =>
+    request(`/projects/${id}`, { method: "PATCH", token, body: JSON.stringify(body) }),
+  upcomingInstruments: (token: string) => request<any[]>("/instruments/upcoming", { token }),
+  markAllRead: (token: string) =>
+    request("/notifications/read-all", { method: "PATCH", token, body: "{}" }),
+  importExpenses: async (
+    token: string,
+    file: { uri: string; name: string; mimeType?: string | null } | File,
+  ) => {
+    const form = new FormData();
+    if (typeof File !== "undefined" && file instanceof File) {
+      form.append("file", file);
+    } else {
+      const f = file as { uri: string; name: string; mimeType?: string | null };
+      form.append("file", {
+        uri: f.uri,
+        name: f.name,
+        type: f.mimeType || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      } as never);
+    }
+    return request("/imports/expenses", { method: "POST", token, body: form });
+  },
 };
 
 export function formatTry(n: number) {

@@ -1,4 +1,4 @@
-import { PrismaClient, Role, CategoryType } from "@prisma/client";
+import { PrismaClient, Role, CategoryType, AccountType } from "@prisma/client";
 import * as argon2 from "argon2";
 
 const prisma = new PrismaClient();
@@ -13,6 +13,16 @@ async function main() {
       passwordHash,
       displayName: "Sistem Yöneticisi",
       role: Role.ADMIN,
+    },
+  });
+
+  await prisma.appSettings.upsert({
+    where: { id: "default" },
+    update: {},
+    create: {
+      id: "default",
+      companyName: "Konfor Proje",
+      approvalLimit: 50000,
     },
   });
 
@@ -33,12 +43,24 @@ async function main() {
     }
   }
 
-  const supplier = await prisma.supplier.findFirst({
-    where: { name: "Örnek Tedarik Ltd.", deletedAt: null },
-  });
-  if (!supplier) {
+  if (!(await prisma.supplier.findFirst({ where: { name: "Örnek Tedarik Ltd.", deletedAt: null } }))) {
     await prisma.supplier.create({
       data: { name: "Örnek Tedarik Ltd.", taxId: "1234567890" },
+    });
+  }
+
+  if (!(await prisma.project.findFirst({ where: { name: "Merkez Şantiye", deletedAt: null } }))) {
+    await prisma.project.create({ data: { name: "Merkez Şantiye", code: "SNT-01" } });
+  }
+
+  if (!(await prisma.financeAccount.findFirst({ where: { name: "Ana Kasa", deletedAt: null } }))) {
+    await prisma.financeAccount.create({
+      data: { name: "Ana Kasa", type: AccountType.CASH, openingBalance: 0 },
+    });
+  }
+  if (!(await prisma.financeAccount.findFirst({ where: { name: "İş Bankası", deletedAt: null } }))) {
+    await prisma.financeAccount.create({
+      data: { name: "İş Bankası", type: AccountType.BANK, openingBalance: 0 },
     });
   }
 

@@ -44,11 +44,29 @@ export default function ReportsScreen() {
     }
   }
 
+  async function exportPdf() {
+    if (!token) return;
+    try {
+      const blob = await api.exportPdf(token, year, month);
+      if (Platform.OS === "web" && typeof document !== "undefined") {
+        downloadBlob(blob, `konfor-${year}-${String(month).padStart(2, "0")}.pdf`);
+        setMessage("PDF indirildi");
+      } else {
+        setMessage("PDF indirme şu an web’de destekleniyor");
+      }
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "PDF başarısız");
+    }
+  }
+
   return (
     <View style={ui.wrap}>
       <Text style={ui.title}>Dönem raporu</Text>
       <PeriodRow month={month} year={year} setMonth={setMonth} setYear={setYear} onLoad={load} />
-      <Button label="Excel indir" onPress={exportExcel} />
+      <View style={ui.row}>
+        <Button label="Excel indir" onPress={exportExcel} />
+        <Button label="PDF indir" tone="ghost" onPress={exportPdf} />
+      </View>
       {message ? <Text style={ui.msg}>{message}</Text> : null}
 
       {data ? (
@@ -90,6 +108,15 @@ export default function ReportsScreen() {
             <Card key={s.id || s.name}>
               <Text style={ui.cardTitle}>{s.name}</Text>
               <Text>{formatTry(s.gross)}</Text>
+            </Card>
+          ))}
+          <Text style={ui.section}>Şantiye kırılımı</Text>
+          {(data.projects || []).map((p) => (
+            <Card key={p.id || p.name}>
+              <Text style={ui.cardTitle}>{p.name}</Text>
+              <Text>
+                Gelir {formatTry(p.income)} · Gider {formatTry(p.expense)} · Net {formatTry(p.net)}
+              </Text>
             </Card>
           ))}
           <Text style={ui.section}>Bekleyen backlog</Text>
