@@ -1,3 +1,5 @@
+import { appendFormFile, isFormDataBody, type PickedFile } from "./form-file";
+
 const API_URL =
   process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, "") ||
   "http://localhost:3001/api";
@@ -112,7 +114,7 @@ async function request<T>(
   const res = await fetch(`${API_URL}${path}`, {
     ...rest,
     headers: {
-      ...(rest.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+      ...(isFormDataBody(rest.body) ? {} : { "Content-Type": "application/json" }),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...headers,
     },
@@ -204,19 +206,10 @@ export const api = {
   uploadExpenseFile: async (
     token: string,
     expenseId: string,
-    file: { uri: string; name: string; mimeType?: string | null } | File,
+    file: PickedFile | File,
   ) => {
     const form = new FormData();
-    if (typeof File !== "undefined" && file instanceof File) {
-      form.append("file", file);
-    } else {
-      const f = file as { uri: string; name: string; mimeType?: string | null };
-      form.append("file", {
-        uri: f.uri,
-        name: f.name,
-        type: f.mimeType || "application/octet-stream",
-      } as never);
-    }
+    await appendFormFile(form, "file", file, "image/jpeg");
     return request(`/expenses/${expenseId}/attachments`, {
       method: "POST",
       token,
@@ -335,19 +328,15 @@ export const api = {
     request("/notifications/read-all", { method: "PATCH", token, body: "{}" }),
   importExpenses: async (
     token: string,
-    file: { uri: string; name: string; mimeType?: string | null } | File,
+    file: PickedFile | File,
   ) => {
     const form = new FormData();
-    if (typeof File !== "undefined" && file instanceof File) {
-      form.append("file", file);
-    } else {
-      const f = file as { uri: string; name: string; mimeType?: string | null };
-      form.append("file", {
-        uri: f.uri,
-        name: f.name,
-        type: f.mimeType || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      } as never);
-    }
+    await appendFormFile(
+      form,
+      "file",
+      file,
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
     return request("/imports/expenses", { method: "POST", token, body: form });
   },
 };

@@ -135,6 +135,7 @@ export default function ExpensesScreen() {
         uri: file.uri,
         name: file.name,
         mimeType: file.mimeType,
+        file: file.file,
       });
       setMessage("Ek yüklendi");
       await load();
