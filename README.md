@@ -28,7 +28,8 @@ Seed kullanıcı: `admin` / `admin123`
 Opsiyonel (OCR / kuyruk / nesne depolama):
 
 ```bash
-# REDIS_URL, OPENAI_API_KEY, S3_ENDPOINT  →  apps/api/.env
+# REDIS_URL, OPENROUTER_API_KEY, S3_ENDPOINT  →  apps/api/.env
+# OCR varsayılanı OpenRouter + x-ai/grok-4.6
 ```
 
 Yoksa: OCR süreç içi çalışır (anahtar yoksa kullanıcı manuel doldurur), dosyalar `uploads/`, kuyruk `setImmediate`.
