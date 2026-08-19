@@ -6,6 +6,13 @@ const MONEY_KEYS = new Set([
   "vatAmount",
   "grossAmount",
   "expectedAmount",
+  "paidAmount",
+  "fxRate",
+  "approvalLimit",
+  "contractAmount",
+  "retainagePercent",
+  "openingBalance",
+  "budgetLimit",
 ]);
 
 export function serializeRecord<T>(row: T): T {

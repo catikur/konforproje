@@ -4,13 +4,18 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma, TaxMode } from "@prisma/client";
-import { calculateMoney, ListQuery, VatRate } from "@konfor/shared";
+import { calculateMoney, ListQuery, VatRate, toTry } from "@konfor/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { serializeMany, serializeRecord } from "../common/serialize";
 import { writeAudit } from "../common/audit";
 import { toDate } from "../common/dates";
 
-const include = { categories: { include: { category: true } } } as const;
+const include = {
+  categories: { include: { category: true } },
+  project: true,
+  account: true,
+  contract: true,
+} as const;
 
 @Injectable()
 export class IncomesService {
@@ -50,6 +55,14 @@ export class IncomesService {
       taxMode: TaxMode;
       vatRate: number;
       categoryIds: string[];
+      projectId?: string | null;
+      accountId?: string | null;
+      contractId?: string | null;
+      invoiceNo?: string | null;
+      dueDate?: string | Date | null;
+      currency?: string;
+      fxRate?: number;
+      paidAmount?: number;
     },
     userId: string,
   ) {
@@ -61,6 +74,10 @@ export class IncomesService {
       data.taxMode,
       data.vatRate as VatRate,
     );
+    const fx = data.fxRate ?? 1;
+    const netAmount = toTry(money.netAmount, fx);
+    const vatAmount = toTry(money.vatAmount, fx);
+    const grossAmount = toTry(money.grossAmount, fx);
     const income = await this.prisma.income.create({
       data: {
         description: data.description,
@@ -68,9 +85,17 @@ export class IncomesService {
         amount: money.inputAmount,
         taxMode: data.taxMode,
         vatRate: data.vatRate,
-        netAmount: money.netAmount,
-        vatAmount: money.vatAmount,
-        grossAmount: money.grossAmount,
+        netAmount,
+        vatAmount,
+        grossAmount,
+        currency: data.currency || "TRY",
+        fxRate: fx,
+        paidAmount: data.paidAmount ?? 0,
+        invoiceNo: data.invoiceNo || null,
+        dueDate: data.dueDate ? toDate(data.dueDate) : null,
+        projectId: data.projectId || null,
+        accountId: data.accountId || null,
+        contractId: data.contractId || null,
         createdById: userId,
         categories: {
           create: data.categoryIds.map((categoryId) => ({ categoryId })),
@@ -83,7 +108,7 @@ export class IncomesService {
       action: "INCOME_CREATE",
       entityType: "Income",
       entityId: income.id,
-      meta: { grossAmount: money.grossAmount },
+      meta: { grossAmount },
     });
     return serializeRecord(income);
   }
@@ -97,6 +122,14 @@ export class IncomesService {
       taxMode?: TaxMode;
       vatRate?: number;
       categoryIds?: string[];
+      projectId?: string | null;
+      accountId?: string | null;
+      contractId?: string | null;
+      invoiceNo?: string | null;
+      dueDate?: string | Date | null;
+      currency?: string;
+      fxRate?: number;
+      paidAmount?: number;
     },
     userId: string,
   ) {
@@ -107,8 +140,9 @@ export class IncomesService {
     const amount = data.amount ?? Number(existing.amount);
     const taxMode = data.taxMode ?? existing.taxMode;
     const vatRate = data.vatRate ?? existing.vatRate;
+    const fx = data.fxRate ?? Number(existing.fxRate);
     const money =
-      data.amount != null || data.taxMode != null || data.vatRate != null
+      data.amount != null || data.taxMode != null || data.vatRate != null || data.fxRate != null
         ? calculateMoney(amount, taxMode, vatRate as VatRate)
         : null;
 
@@ -121,14 +155,27 @@ export class IncomesService {
         data: {
           description: data.description,
           incomeDate: data.incomeDate ? toDate(data.incomeDate) : undefined,
+          dueDate:
+            data.dueDate === undefined
+              ? undefined
+              : data.dueDate
+                ? toDate(data.dueDate)
+                : null,
+          projectId: data.projectId === undefined ? undefined : data.projectId || null,
+          accountId: data.accountId === undefined ? undefined : data.accountId || null,
+          contractId: data.contractId === undefined ? undefined : data.contractId || null,
+          invoiceNo: data.invoiceNo === undefined ? undefined : data.invoiceNo || null,
+          currency: data.currency,
+          fxRate: data.fxRate,
+          paidAmount: data.paidAmount,
           ...(money
             ? {
                 amount: money.inputAmount,
                 taxMode,
                 vatRate,
-                netAmount: money.netAmount,
-                vatAmount: money.vatAmount,
-                grossAmount: money.grossAmount,
+                netAmount: toTry(money.netAmount, fx),
+                vatAmount: toTry(money.vatAmount, fx),
+                grossAmount: toTry(money.grossAmount, fx),
               }
             : {}),
           ...(data.categoryIds
@@ -201,6 +248,7 @@ export class IncomesService {
     if (params.categoryId) {
       and.push({ categories: { some: { categoryId: params.categoryId } } });
     }
+    if (params.projectId) and.push({ projectId: params.projectId });
     return { AND: and };
   }
 }

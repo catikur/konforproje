@@ -13,17 +13,29 @@ export default function DashboardScreen() {
   const [data, setData] = useState<PeriodReport | null>(null);
   const [trend, setTrend] = useState<TrendPoint[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(0);
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [unread, setUnread] = useState(0);
+  const [upcoming, setUpcoming] = useState<any[]>([]);
 
   const load = useCallback(async () => {
     if (!token) return;
     try {
       setError(null);
-      const [report, points] = await Promise.all([
+      const [report, points, pendingList, budgetAlerts, unreadRes, inst] = await Promise.all([
         api.periodReport(token, year, month),
         api.trend(token, 12),
+        api.expenses(token, { year, month, approvalStatus: "PENDING", pageSize: 1 }),
+        api.budgetAlerts(token, year, month),
+        api.unreadCount(token),
+        api.upcomingInstruments(token),
       ]);
       setData(report);
       setTrend(points);
+      setPending(pendingList.total);
+      setAlerts(budgetAlerts.filter((a: any) => a.over));
+      setUnread(unreadRes.count);
+      setUpcoming(inst);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Rapor alınamadı");
     }
@@ -60,6 +72,11 @@ export default function DashboardScreen() {
           <Button label="+ Gider" onPress={() => router.push("/expenses")} />
           <Button label="+ Gelir" onPress={() => router.push("/incomes")} />
           <Button
+            label="Fiş çek"
+            tone="ghost"
+            onPress={() => router.push("/capture")}
+          />
+          <Button
             label="Backlog"
             tone="ghost"
             onPress={() => router.push("/backlog")}
@@ -67,6 +84,28 @@ export default function DashboardScreen() {
         </View>
       ) : null}
       {error ? <Text style={ui.error}>{error}</Text> : null}
+      {pending > 0 || unread > 0 || alerts.length || upcoming.length ? (
+        <View style={{ gap: 8 }}>
+          {unread > 0 ? (
+            <Text style={ui.msg}>{unread} okunmamış bildirim</Text>
+          ) : null}
+          {pending > 0 ? (
+            <Text style={ui.msg}>{pending} gider onay bekliyor</Text>
+          ) : null}
+          {alerts.map((a) => (
+            <Text key={a.id} style={ui.error}>
+              Bütçe aşımı: {a.category?.name || a.project?.name || "Genel"} ·{" "}
+              {formatTry(a.actual)} / {formatTry(a.amount)}
+            </Text>
+          ))}
+          {upcoming.map((i) => (
+            <Text key={i.id} style={ui.hint}>
+              Vadesi yaklaşan {i.type === "CHECK" ? "çek" : "senet"}: {i.counterparty}{" "}
+              {formatTry(Number(i.amount))} · {String(i.dueDate).slice(0, 10)}
+            </Text>
+          ))}
+        </View>
+      ) : null}
       {data ? (
         <View style={styles.grid}>
           <Kpi label="Fiili gelir" value={formatTry(data.actualIncome)} tone="good" />
@@ -90,6 +129,18 @@ export default function DashboardScreen() {
           />
           <Kpi label="Net beklenen" value={formatTry(data.netExpected)} />
         </View>
+      ) : null}
+
+      {data?.projects?.length ? (
+        <>
+          <Text style={ui.section}>Şantiye kırılımı</Text>
+          {data.projects.map((p) => (
+            <View key={p.id || p.name} style={styles.catRow}>
+              <Text style={{ flex: 1 }}>{p.name}</Text>
+              <Text style={ui.cardTitle}>{formatTry(p.net)}</Text>
+            </View>
+          ))}
+        </>
       ) : null}
 
       <Text style={ui.section}>Son 12 ay (fiili)</Text>

@@ -20,16 +20,20 @@ export default function BacklogScreen() {
   const [amount, setAmount] = useState("");
   const [status, setStatus] = useState<(typeof STATUSES)[number]>("PLANNED");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [projects, setProjects] = useState<any[]>([]);
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
-    const [list, incomes, expenses] = await Promise.all([
+    const [list, incomes, expenses, projs] = await Promise.all([
       api.backlog(token, { year, month, pageSize: 100 }),
       api.incomes(token, { year, month, pageSize: 100 }),
       api.expenses(token, { year, month, pageSize: 100 }),
+      api.projects(token),
     ]);
     setItems(list.items);
+    setProjects(projs);
     setActuals([
       ...incomes.items.map((i: any) => ({ ...i, kind: "INCOME" })),
       ...expenses.items.map((e: any) => ({ ...e, kind: "EXPENSE" })),
@@ -52,6 +56,7 @@ export default function BacklogScreen() {
       description,
       categoryIds: [],
       status,
+      projectId,
     };
     try {
       if (editingId) await api.updateBacklog(token, editingId, body);
@@ -105,6 +110,13 @@ export default function BacklogScreen() {
               <Chip key={s} label={s} active={status === s} onPress={() => setStatus(s)} />
             ))}
           </View>
+          <Text style={ui.meta}>Şantiye / proje</Text>
+          <View style={ui.row}>
+            <Chip label="Yok" active={!projectId} onPress={() => setProjectId(null)} />
+            {projects.map((p) => (
+              <Chip key={p.id} label={p.name} active={projectId === p.id} onPress={() => setProjectId(p.id)} />
+            ))}
+          </View>
           <View style={ui.row}>
             <Button label={editingId ? "Güncelle" : "Plan ekle"} onPress={save} />
             {editingId ? (
@@ -134,6 +146,7 @@ export default function BacklogScreen() {
           </Text>
           <Text style={ui.meta}>
             {item.status} · kalan {formatTry(Number(item.remainingAmount || 0))}
+            {item.project ? ` · ${item.project.name}` : ""}
           </Text>
           {writable ? (
             <View style={ui.row}>
@@ -146,6 +159,7 @@ export default function BacklogScreen() {
                   setAmount(String(item.expectedAmount));
                   setDirection(item.direction);
                   setStatus(item.status);
+                  setProjectId(item.projectId || null);
                 }}
               />
               <Button

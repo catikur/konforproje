@@ -75,3 +75,13 @@ export function toNumber(v: { toNumber?: () => number } | number | string | null
   if (typeof v.toNumber === "function") return v.toNumber();
   return Number(v) || 0;
 }
+
+export function toTry(amount: number, fxRate = 1): number {
+  return round2(amount * (fxRate || 1));
+}
+
+export const CurrencySchema = z
+  .string()
+  .length(3)
+  .transform((s) => s.toUpperCase())
+  .default("TRY");

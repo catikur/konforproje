@@ -15,11 +15,10 @@ import {
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { diskStorage } from "multer";
-import { extname } from "path";
-import { mkdirSync } from "fs";
+import { memoryStorage } from "multer";
 import { Role } from "@prisma/client";
 import {
+  ApproveSchema,
   ExpenseCreateSchema,
   ExpenseUpdateSchema,
   ListQuerySchema,
@@ -28,12 +27,7 @@ import type { Response } from "express";
 import { ExpensesService } from "./expenses.service";
 import { Roles } from "../common/guards";
 import { zodPipe } from "../common/zod-pipe";
-import {
-  ALLOWED_UPLOAD_MIME,
-  MAX_UPLOAD_BYTES,
-  openUploadFile,
-  uploadDir,
-} from "../common/uploads";
+import { ALLOWED_UPLOAD_MIME, MAX_UPLOAD_BYTES } from "../common/uploads";
 
 @Controller("expenses")
 export class ExpensesController {
@@ -68,6 +62,22 @@ export class ExpensesController {
     return this.expenses.update(id, body as never, req.user.userId);
   }
 
+  @Post(":id/ocr/apply")
+  @Roles(Role.ADMIN, Role.FINANS)
+  applyOcr(@Param("id") id: string, @Req() req: { user: { userId: string } }) {
+    return this.expenses.applyOcr(id, req.user.userId);
+  }
+
+  @Post(":id/decide")
+  @Roles(Role.ADMIN)
+  decide(
+    @Param("id") id: string,
+    @Body(zodPipe(ApproveSchema)) body: { approve: boolean },
+    @Req() req: { user: { userId: string } },
+  ) {
+    return this.expenses.decide(id, body.approve, req.user.userId);
+  }
+
   @Post(":id/restore")
   @Roles(Role.ADMIN)
   restore(@Param("id") id: string, @Req() req: { user: { userId: string } }) {
@@ -78,17 +88,7 @@ export class ExpensesController {
   @Roles(Role.ADMIN, Role.FINANS)
   @UseInterceptors(
     FileInterceptor("file", {
-      storage: diskStorage({
-        destination: (_req, _file, cb) => {
-          const dir = uploadDir();
-          mkdirSync(dir, { recursive: true });
-          cb(null, dir);
-        },
-        filename: (_req, file, cb) => {
-          const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-          cb(null, `${unique}${extname(file.originalname) || ""}`);
-        },
-      }),
+      storage: memoryStorage(),
       limits: { fileSize: MAX_UPLOAD_BYTES },
       fileFilter: (_req, file, cb) => {
         const ok = ALLOWED_UPLOAD_MIME.includes(file.mimetype.toLowerCase());
@@ -101,9 +101,7 @@ export class ExpensesController {
     @UploadedFile() file: Express.Multer.File,
     @Req() req: { user: { userId: string } },
   ) {
-    if (!file) {
-      throw new BadRequestException("Dosya gerekli");
-    }
+    if (!file) throw new BadRequestException("Dosya gerekli");
     return this.expenses.addAttachment(id, file, req.user.userId);
   }
 
@@ -113,13 +111,13 @@ export class ExpensesController {
     @Param("attId") attId: string,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const att = await this.expenses.getAttachment(id, attId);
+    const { att, stream } = await this.expenses.attachmentStream(id, attId);
     res.setHeader("Content-Type", att.mimeType);
     res.setHeader(
       "Content-Disposition",
       `inline; filename="${encodeURIComponent(att.originalName)}"`,
     );
-    return new StreamableFile(openUploadFile(att.filename));
+    return new StreamableFile(stream);
   }
 
   @Delete(":id/attachments/:attId")
