@@ -15,26 +15,52 @@ const SYSTEM = `Sen Türk fatura/fiş okuyucusun. Yalnızca JSON döndür.
 Alanlar: amount (sayı), expenseDate (YYYY-MM-DD), vatRate (0,1,10,20), taxMode (INCLUDED veya EXCLUDED), description, supplierName, invoiceNo, rawText.
 Bilinmiyorsa alanı atla.`;
 
+export function ocrApiKey() {
+  return (
+    process.env.OPENROUTER_API_KEY ||
+    process.env.OCR_API_KEY ||
+    process.env.OPENAI_API_KEY ||
+    ""
+  );
+}
+
+export function ocrBaseUrl() {
+  return (process.env.OCR_BASE_URL || "https://openrouter.ai/api/v1").replace(/\/$/, "");
+}
+
+export function ocrModel() {
+  return process.env.OCR_MODEL || process.env.OPENAI_OCR_MODEL || "x-ai/grok-4.6";
+}
+
+function parseJsonContent(content: string): OcrSuggestion {
+  const trimmed = content.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const raw = fenced?.[1]?.trim() || trimmed;
+  return JSON.parse(raw) as OcrSuggestion;
+}
+
 export async function extractFromImage(
   buffer: Buffer,
   mimeType: string,
 ): Promise<OcrSuggestion> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = ocrApiKey();
   if (!apiKey) {
-    return { skipped: true, reason: "OPENAI_API_KEY tanımlı değil" };
+    return { skipped: true, reason: "OPENROUTER_API_KEY tanımlı değil" };
   }
   if (!mimeType.startsWith("image/")) {
     return { skipped: true, reason: "PDF OCR için görsel yükleyin" };
   }
   const b64 = buffer.toString("base64");
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await fetch(`${ocrBaseUrl()}/chat/completions`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
+      "HTTP-Referer": process.env.OCR_HTTP_REFERER || "https://github.com/catikur/konforproje",
+      "X-Title": process.env.OCR_APP_TITLE || "Konfor Proje",
     },
     body: JSON.stringify({
-      model: process.env.OPENAI_OCR_MODEL || "gpt-4o-mini",
+      model: ocrModel(),
       temperature: 0,
       response_format: { type: "json_object" },
       messages: [
@@ -61,7 +87,7 @@ export async function extractFromImage(
   };
   const content = json.choices?.[0]?.message?.content || "{}";
   try {
-    const parsed = JSON.parse(content) as OcrSuggestion;
+    const parsed = parseJsonContent(content);
     if (parsed.vatRate != null && ![0, 1, 10, 20].includes(Number(parsed.vatRate))) {
       delete parsed.vatRate;
     }
