@@ -15,7 +15,7 @@
 # PostgreSQL çalışıyor olmalı; örnek URL:
 # postgresql://konfor:konfor@localhost:5432/konforproje
 
-cp apps/api/.env.example apps/api/.env   # gerekirse düzenle
+cp apps/api/.env.example apps/api/.env   # JWT_SECRET zorunlu
 pnpm install
 pnpm --filter @konfor/shared build
 pnpm --filter @konfor/api prisma:generate
@@ -45,5 +45,17 @@ pnpm --filter @konfor/mobile web
 | `pnpm lint` | Tip kontrolü |
 | `pnpm test` | Unit testler (shared + api) |
 | `pnpm db:seed` | Seed |
+
+## MVP kapsamı
+
+- JWT access (15 dk) + refresh token rotasyonu, login rate-limit
+- Gelir / gider / backlog CRUD, soft delete, audit
+- Dönem raporu (SQL aggregate), kategori/tedarikçi kırılımı, Excel export
+- Dashboard KPI + 12 aylık trend
+- Gider ekleri (PDF/görsel) — kimlik doğrulamalı indirme
+- Backlog: önceki ayı kopyala, fiili kayda bağla
+- Admin: kullanıcı / kategori / tedarikçi bakım, şifre sıfırla
+
+OCR, MinIO ve kuyruk **Faz 2**.
 
 Ürün planı: [docs/URUN_PLANI.md](docs/URUN_PLANI.md)

@@ -14,6 +14,7 @@ export default function LoginScreen() {
   const { login, token, loading } = useAuth();
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("admin123");
+  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -23,7 +24,7 @@ export default function LoginScreen() {
     setSubmitting(true);
     setError(null);
     try {
-      await login(username.trim(), password);
+      await login(username.trim(), password, rememberMe);
       router.replace("/dashboard");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Giriş başarısız");
@@ -50,7 +51,15 @@ export default function LoginScreen() {
           placeholder="Şifre"
           value={password}
           onChangeText={setPassword}
+          onSubmitEditing={onSubmit}
         />
+        <Pressable
+          style={styles.remember}
+          onPress={() => setRememberMe((v) => !v)}
+        >
+          <View style={[styles.box, rememberMe && styles.boxOn]} />
+          <Text>Beni hatırla</Text>
+        </Pressable>
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <Pressable
           style={[styles.btn, submitting && { opacity: 0.7 }]}
@@ -101,6 +110,15 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
   },
+  remember: { flexDirection: "row", alignItems: "center", gap: 8 },
+  box: {
+    width: 18,
+    height: 18,
+    borderWidth: 1,
+    borderColor: "#0F766E",
+    borderRadius: 4,
+  },
+  boxOn: { backgroundColor: "#0F766E" },
   btn: {
     backgroundColor: "#0F766E",
     borderRadius: 10,

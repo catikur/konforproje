@@ -1,79 +1,77 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Req,
+  Res,
+  StreamableFile,
   UploadedFile,
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import {
-  IsArray,
-  IsDateString,
-  IsEnum,
-  IsNumber,
-  IsOptional,
-  IsString,
-  Min,
-  MinLength,
-} from "class-validator";
 import { diskStorage } from "multer";
-import { extname, join } from "path";
+import { extname } from "path";
 import { mkdirSync } from "fs";
-import { Role, TaxMode } from "@prisma/client";
+import { Role } from "@prisma/client";
+import {
+  ExpenseCreateSchema,
+  ExpenseUpdateSchema,
+  ListQuerySchema,
+} from "@konfor/shared";
+import type { Response } from "express";
 import { ExpensesService } from "./expenses.service";
 import { Roles } from "../common/guards";
-
-class CreateExpenseDto {
-  @IsString()
-  @MinLength(1)
-  description!: string;
-
-  @IsDateString()
-  expenseDate!: string;
-
-  @IsNumber()
-  @Min(0.01)
-  amount!: number;
-
-  @IsEnum(TaxMode)
-  taxMode: TaxMode = TaxMode.INCLUDED;
-
-  @IsNumber()
-  vatRate = 20;
-
-  @IsArray()
-  @IsString({ each: true })
-  categoryIds!: string[];
-
-  @IsOptional()
-  @IsString()
-  supplierId?: string | null;
-}
+import { zodPipe } from "../common/zod-pipe";
+import {
+  ALLOWED_UPLOAD_MIME,
+  MAX_UPLOAD_BYTES,
+  openUploadFile,
+  uploadDir,
+} from "../common/uploads";
 
 @Controller("expenses")
 export class ExpensesController {
   constructor(private expenses: ExpensesService) {}
 
   @Get()
-  list(@Query("year") year?: string, @Query("month") month?: string) {
-    return this.expenses.list({
-      year: year ? Number(year) : undefined,
-      month: month ? Number(month) : undefined,
-    });
+  list(@Query(zodPipe(ListQuerySchema)) query: Record<string, unknown>) {
+    return this.expenses.list(query as never);
+  }
+
+  @Get(":id")
+  get(@Param("id") id: string) {
+    return this.expenses.get(id);
   }
 
   @Post()
   @Roles(Role.ADMIN, Role.FINANS)
   create(
-    @Body() body: CreateExpenseDto,
+    @Body(zodPipe(ExpenseCreateSchema)) body: Record<string, unknown>,
     @Req() req: { user: { userId: string } },
   ) {
-    return this.expenses.create(body, req.user.userId);
+    return this.expenses.create(body as never, req.user.userId);
+  }
+
+  @Patch(":id")
+  @Roles(Role.ADMIN, Role.FINANS)
+  update(
+    @Param("id") id: string,
+    @Body(zodPipe(ExpenseUpdateSchema)) body: Record<string, unknown>,
+    @Req() req: { user: { userId: string } },
+  ) {
+    return this.expenses.update(id, body as never, req.user.userId);
+  }
+
+  @Post(":id/restore")
+  @Roles(Role.ADMIN)
+  restore(@Param("id") id: string, @Req() req: { user: { userId: string } }) {
+    return this.expenses.restore(id, req.user.userId);
   }
 
   @Post(":id/attachments")
@@ -82,18 +80,18 @@ export class ExpensesController {
     FileInterceptor("file", {
       storage: diskStorage({
         destination: (_req, _file, cb) => {
-          const dir = join(process.cwd(), process.env.UPLOAD_DIR || "uploads");
+          const dir = uploadDir();
           mkdirSync(dir, { recursive: true });
           cb(null, dir);
         },
         filename: (_req, file, cb) => {
           const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-          cb(null, `${unique}${extname(file.originalname)}`);
+          cb(null, `${unique}${extname(file.originalname) || ""}`);
         },
       }),
-      limits: { fileSize: 10 * 1024 * 1024 },
+      limits: { fileSize: MAX_UPLOAD_BYTES },
       fileFilter: (_req, file, cb) => {
-        const ok = /pdf|jpe?g|png|heic|webp/i.test(file.mimetype);
+        const ok = ALLOWED_UPLOAD_MIME.includes(file.mimetype.toLowerCase());
         cb(ok ? null : new Error("Desteklenmeyen dosya tipi"), ok);
       },
     }),
@@ -103,7 +101,35 @@ export class ExpensesController {
     @UploadedFile() file: Express.Multer.File,
     @Req() req: { user: { userId: string } },
   ) {
+    if (!file) {
+      throw new BadRequestException("Dosya gerekli");
+    }
     return this.expenses.addAttachment(id, file, req.user.userId);
+  }
+
+  @Get(":id/attachments/:attId/file")
+  async file(
+    @Param("id") id: string,
+    @Param("attId") attId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const att = await this.expenses.getAttachment(id, attId);
+    res.setHeader("Content-Type", att.mimeType);
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${encodeURIComponent(att.originalName)}"`,
+    );
+    return new StreamableFile(openUploadFile(att.filename));
+  }
+
+  @Delete(":id/attachments/:attId")
+  @Roles(Role.ADMIN, Role.FINANS)
+  removeAttachment(
+    @Param("id") id: string,
+    @Param("attId") attId: string,
+    @Req() req: { user: { userId: string } },
+  ) {
+    return this.expenses.removeAttachment(id, attId, req.user.userId);
   }
 
   @Delete(":id")

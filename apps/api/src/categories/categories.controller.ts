@@ -1,47 +1,9 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Patch,
-  Post,
-  Query,
-} from "@nestjs/common";
-import {
-  IsBoolean,
-  IsEnum,
-  IsInt,
-  IsOptional,
-  IsString,
-  Matches,
-  MinLength,
-} from "class-validator";
-import { CategoryType, Role } from "@prisma/client";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import { Role } from "@prisma/client";
+import { CategorySchema, CategoryUpdateSchema } from "@konfor/shared";
 import { CategoriesService } from "./categories.service";
 import { Roles } from "../common/guards";
-
-class CategoryDto {
-  @IsString()
-  @MinLength(1)
-  name!: string;
-
-  @IsOptional()
-  @IsEnum(CategoryType)
-  type?: CategoryType;
-
-  @IsOptional()
-  @Matches(/^#[0-9A-Fa-f]{6}$/)
-  color?: string;
-
-  @IsOptional()
-  @IsInt()
-  sortOrder?: number;
-
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
-}
+import { zodPipe } from "../common/zod-pipe";
 
 @Controller("categories")
 export class CategoriesController {
@@ -53,15 +15,18 @@ export class CategoriesController {
   }
 
   @Post()
-  @Roles(Role.ADMIN, Role.FINANS)
-  create(@Body() body: CategoryDto) {
-    return this.categories.create(body);
+  @Roles(Role.ADMIN)
+  create(@Body(zodPipe(CategorySchema)) body: Record<string, unknown>) {
+    return this.categories.create(body as never);
   }
 
   @Patch(":id")
-  @Roles(Role.ADMIN, Role.FINANS)
-  update(@Param("id") id: string, @Body() body: CategoryDto) {
-    return this.categories.update(id, body);
+  @Roles(Role.ADMIN)
+  update(
+    @Param("id") id: string,
+    @Body(zodPipe(CategoryUpdateSchema)) body: Record<string, unknown>,
+  ) {
+    return this.categories.update(id, body as never);
   }
 
   @Delete(":id")

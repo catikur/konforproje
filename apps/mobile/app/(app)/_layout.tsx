@@ -15,6 +15,8 @@ const links = [
   { href: "/expenses", label: "Giderler" },
   { href: "/incomes", label: "Gelirler" },
   { href: "/backlog", label: "Backlog" },
+  { href: "/reports", label: "Raporlar" },
+  { href: "/account", label: "Hesap" },
   { href: "/admin", label: "Admin" },
 ] as const;
 
@@ -36,14 +38,16 @@ export default function AppLayout() {
   const nav = (
     <View style={[styles.nav, wide ? styles.navSide : styles.navTop]}>
       <Text style={styles.navBrand}>Konfor Proje</Text>
-      <Text style={styles.navUser}>{user?.displayName}</Text>
+      <Text style={styles.navUser}>
+        {user?.displayName} · {user?.role}
+      </Text>
       {links.map((l) => {
         if (l.href === "/admin" && user?.role !== "ADMIN") return null;
         const active = pathname.startsWith(l.href);
         return (
           <Pressable
             key={l.href}
-            onPress={() => router.push(l.href as any)}
+            onPress={() => router.push(l.href as never)}
             style={[styles.navItem, active && styles.navItemActive]}
           >
             <Text style={[styles.navText, active && styles.navTextActive]}>
@@ -82,15 +86,15 @@ const styles = StyleSheet.create({
   shell: { flex: 1, backgroundColor: "#F8FAFC" },
   shellRow: { flexDirection: "row" },
   nav: { backgroundColor: "#0F766E", padding: 16, gap: 8 },
-  navSide: { width: 220, minHeight: "100%" as any },
+  navSide: { width: 220, minHeight: "100%" as never },
   navTop: { flexDirection: "row", flexWrap: "wrap", alignItems: "center" },
   navBrand: { color: "#fff", fontWeight: "800", fontSize: 18, marginRight: 8 },
-  navUser: { color: "#A7F3D0", marginRight: 8 },
+  navUser: { color: "#A7F3D0", marginRight: 8, fontSize: 12 },
   navItem: { paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8 },
   navItemActive: { backgroundColor: "#115E59" },
   navText: { color: "#CCFBF1", fontWeight: "600" },
   navTextActive: { color: "#fff" },
-  logout: { marginLeft: "auto" as any, padding: 8 },
+  logout: { marginLeft: "auto" as never, padding: 8 },
   logoutText: { color: "#FECACA", fontWeight: "600" },
   content: { flex: 1 },
 });
