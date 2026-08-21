@@ -385,6 +385,7 @@ export default function AdminScreen() {
                 uri: file.uri,
                 name: file.name,
                 mimeType: file.mimeType,
+                file: file.file,
               })) as { created: number; errors: string[] };
               setMessage(
                 `${res.created} satır aktarıldı${res.errors?.length ? ` · ${res.errors.length} hata` : ""}`,

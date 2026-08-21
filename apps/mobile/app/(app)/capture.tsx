@@ -62,6 +62,7 @@ export default function CaptureScreen() {
         uri: asset.uri,
         name: asset.fileName || "fis.jpg",
         mimeType: asset.mimeType || "image/jpeg",
+        file: asset.file,
       });
       setMessage("Fiş yüklendi, OCR çalışıyor. Giderler’den öneriyi onaylayın.");
       router.push("/expenses");

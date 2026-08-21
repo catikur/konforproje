@@ -34,6 +34,13 @@ Opsiyonel (OCR / kuyruk / nesne depolama):
 
 Yoksa: OCR süreç içi çalışır (anahtar yoksa kullanıcı manuel doldurur), dosyalar `uploads/`, kuyruk `setImmediate`.
 
+## OCR’ı denemek
+
+1. `GET http://localhost:3001/api/health` içinde `"ocr": true` olsun (`OPENROUTER_API_KEY` API sürecinde).
+2. Web’de **Hızlı fiş → Galeriden seç** veya Giderler’de kayıt sonrası **Dosya ekle**. **JPEG/PNG** kullan; PDF OCR atlanır.
+3. Gider satırında `OCR DONE` görünce **Öneriyi uygula**.
+4. `OCR FAILED` ise satırdaki gerekçe (anahtar, model, görsel) geçerlidir — “Dosya gerekli” yüklemenin API’ye boş gitmesidir, OCR değil.
+
 ## Geliştirme
 
 ```bash
